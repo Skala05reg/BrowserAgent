@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Dict, Any
 from .brain import AgentBrain
 from .core import Agent
@@ -33,12 +34,16 @@ class PlannerAgent:
         self.brain = AgentBrain(provider="anthropic", system_prompt=PLANNER_PROMPT)
         self.navigator = Agent() # The worker
         
+    async def start_session(self):
+        """Initializes the browser session once."""
+        await self.navigator.start_session()
+
     async def run(self, user_task: str):
-        logger.info(f"👔 [bold blue]Planner Agent started[/bold blue] with task: {user_task}")
+        logger.info(f"👔 Planner Agent started with task: {user_task}")
         
-        # Start browser once
-        await self.navigator.browser.start()
-        await self.navigator.browser.navigate(self.navigator.start_url)
+        # Ensure browser is running
+        if not self.navigator.browser.playwright:
+            await self.start_session()
         
         completed_steps = []
         
@@ -54,7 +59,10 @@ class PlannerAgent:
                 choice = decision.get("action", {})
                 thought = decision.get("thought", "")
                 
-                logger.info(f"👔 Planner Thought: [bold magenta]{thought}[/bold magenta]")
+                # Clean rich tags from thought if LLM generates them
+                thought = re.sub(r'\[/?bold.*?\]', '', thought)
+                
+                logger.info(f"👔 Planner Thought: {thought}")
                 action_name = choice.get("name")
                 params = choice.get("params", {})
                 

@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Optional
 from ..browser.manager import BrowserManager
 from .brain import AgentBrain
@@ -11,19 +12,26 @@ class Agent:
         self.brain = AgentBrain(provider="anthropic")
         self.start_url = start_url
 
+    async def start_session(self):
+        """Starts the browser session."""
+        logger.info("🚀 Starting Browser Session...")
+        await self.browser.start()
+        await self.browser.navigate(self.start_url)
+
     async def run(self, task: str):
         """Standalone run mode."""
         logger.info(f"🚀 Starting Agent (Standalone) with task: {task}")
-        await self.browser.start()
-        await self.browser.navigate(self.start_url)
+        if not self.browser.playwright:
+             await self.start_session()
         return await self.run_subtask(task)
 
     async def run_subtask(self, task: str) -> str:
         """Runs the agent loop for a specific subtask."""
-        logger.info(f"🏃 [bold green]Navigator working on:[/bold green] {task}")
+        logger.info(f"🏃 Navigator working on: {task}")
         
         step = 0
         max_steps = 20
+        result = None
         
         try:
             while step < max_steps:
@@ -33,12 +41,22 @@ class Agent:
                 # 1. Observe
                 state = await self.browser.get_state()
                 
+                # Capture Visual State (Multimodal)
+                screenshot = await self.browser.take_screenshot(with_som=True)
+                if screenshot:
+                    logger.info("📸 Visual state captured (with SoM).")
+                else:
+                    logger.warning("⚠️ Failed to capture visual state.")
+
                 # 2. Think
-                decision = await self.brain.think(state, task)
+                decision = await self.brain.think(state, task, last_action_result=result, screenshot_b64=screenshot)
                 choice = decision.get("action", {})
                 thought = decision.get("thought", "No thought provided.")
                 
-                logger.info(f"🧠 Thought: [bold cyan]{thought}[/bold cyan]")
+                # Clean rich tags
+                thought = re.sub(r'\[/?bold.*?\]', '', thought)
+                
+                logger.info(f"🧠 Thought: {thought}")
                 logger.info(f"⚡ Action: {choice}")
                 
                 action_name = choice.get("name")
@@ -47,18 +65,26 @@ class Agent:
                 if action_name == "finish":
                     result = params.get("result", "Done")
                     logger.info(f"✅ Subtask Finished: {result}")
+                    
+                    # Reflection & Memory
+                    logger.info("🤔 Reflecting on task...")
+                    reflection = await self.brain.reflect(task, result, success=True)
+                    self.brain.memory.add_experience(task, result, reflection, success=True)
+                    logger.info(f"🧠 Learned: {reflection}")
+                    
                     return result
                 
                 # 3. Security Check (Human-in-the-loop)
                 if self._is_sensitive_action(action_name, params, thought):
                     if not Confirm.ask(f"⚠️  Security Alert: Agent wants to {action_name} with params {params}. Allow?"):
                         logger.warning("❌ User denied action.")
+                        result = "User denied action via security check."
                         continue
                 
                 # 4. Act
                 if action_name == "ask_user":
                      question = params.get("question", "User attention required.")
-                     logger.info(f"🛑 [bold red]HANDOVER REQUESTED[/bold red]: {question}")
+                     logger.info(f"🛑 HANDOVER REQUESTED: {question}")
                      logger.info("⏸️  Agent paused. Perform manual actions in the browser (Login/Captcha).")
                      input("⌨️  Press ENTER in this terminal when you are ready to resume...")
                      logger.info("▶️  Resuming agent...")
@@ -68,15 +94,26 @@ class Agent:
                 
                 logger.info(f"👉 Result: {result}")
                 await asyncio.sleep(1)
-                
-            return "Max steps reached without finish."
+            
+            msg = "Max steps reached without finish."
+            logger.warning(f"❌ {msg}")
+            reflection = await self.brain.reflect(task, msg, success=False)
+            self.brain.memory.add_experience(task, msg, reflection, success=False)
+            return msg
 
         except KeyboardInterrupt:
             logger.info("🛑 Stopped by user.")
             return "Stopped by user"
         except Exception as e:
             logger.error(f"Error in subtask: {e}")
-            return f"Error: {e}"
+            msg = f"Error: {e}"
+            # Attempt reflection even on error
+            try:
+                reflection = await self.brain.reflect(task, msg, success=False)
+                self.brain.memory.add_experience(task, msg, reflection, success=False)
+            except Exception as mem_e:
+                logger.warning(f"Failed to reflect on error: {mem_e}")
+            return msg
 
     def _is_sensitive_action(self, action: str, params: dict, thought: str = "") -> bool:
         """
