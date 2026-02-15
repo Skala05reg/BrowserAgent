@@ -1,5 +1,25 @@
 # CONTEXT
 
+## 2026-02-15 — Priority 5: GLM Endpoint Connection Check
+
+### Что добавлено
+1. Расширен `model` конфиг:
+- `connectionCheckSystemPrompt`
+- `connectionCheckUserPrompt`
+- `connectionCheckMaxTokens`
+
+2. Добавлен скрипт проверки подключения:
+- `src/scripts/checkModelConnection.ts`
+- npm команда: `npm run model:check`
+
+3. Что делает `model:check`:
+- читает runtime config + env;
+- отправляет тестовый `chat/completions` запрос на `MODEL_API_BASE_URL`;
+- печатает provider/model/endpoint/ответ;
+- возвращает non-zero код при ошибке подключения.
+
+4. Обновлена документация (`README.md`) с инструкцией по проверке GLM/openai-compatible endpoint.
+
 ## 2026-02-15 — Priority 4: Tests
 
 ### Что добавлено

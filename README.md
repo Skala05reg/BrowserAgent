@@ -76,6 +76,14 @@ MODEL_PROVIDER=openai_compatible
 
 Если `MODEL_PROVIDER=rule_based`, агент работает без API-ключа (ограниченный fallback-режим).
 
+Проверка подключения к модели:
+
+```bash
+npm run model:check
+```
+
+Команда отправляет тестовый `chat/completions` запрос на `MODEL_API_BASE_URL` и печатает ответ.
+
 ## Как использовать паузу
 
 1. Запусти задачу: `/run ...`.

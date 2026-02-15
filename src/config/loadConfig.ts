@@ -41,7 +41,10 @@ const runtimeSchema = z.object({
     modelName: z.string().min(1),
     temperature: z.number().min(0).max(2),
     maxTokens: z.number().int().positive(),
-    requestTimeoutMs: z.number().int().positive()
+    requestTimeoutMs: z.number().int().positive(),
+    connectionCheckSystemPrompt: z.string().min(1),
+    connectionCheckUserPrompt: z.string().min(1),
+    connectionCheckMaxTokens: z.number().int().positive()
   }),
   safety: z.object({
     requireConfirmationRiskLevels: z.array(z.enum(["safe", "sensitive", "destructive", "financial", "external_send"])),

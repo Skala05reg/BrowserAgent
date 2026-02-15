@@ -44,6 +44,9 @@ export interface ModelConfig {
   temperature: number;
   maxTokens: number;
   requestTimeoutMs: number;
+  connectionCheckSystemPrompt: string;
+  connectionCheckUserPrompt: string;
+  connectionCheckMaxTokens: number;
 }
 
 export interface SafetyConfig {

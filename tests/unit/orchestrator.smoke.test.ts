@@ -42,7 +42,10 @@ function createRuntimeConfig(): RuntimeConfig {
       modelName: "glm-4.7",
       temperature: 0,
       maxTokens: 200,
-      requestTimeoutMs: 1000
+      requestTimeoutMs: 1000,
+      connectionCheckSystemPrompt: "system",
+      connectionCheckUserPrompt: "user",
+      connectionCheckMaxTokens: 20
     },
     safety: {
       requireConfirmationRiskLevels: ["destructive", "financial", "external_send"],

@@ -38,7 +38,10 @@
     "modelName": "glm-4.7",
     "temperature": 0.2,
     "maxTokens": 1400,
-    "requestTimeoutMs": 45000
+    "requestTimeoutMs": 45000,
+    "connectionCheckSystemPrompt": "You are a healthcheck assistant. Reply with short plain text only.",
+    "connectionCheckUserPrompt": "Return exactly: GLM_CONNECTION_OK",
+    "connectionCheckMaxTokens": 40
   },
   "safety": {
     "requireConfirmationRiskLevels": [
