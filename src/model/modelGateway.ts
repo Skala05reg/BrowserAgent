@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RuntimeConfig } from "../config/types.js";
 import { AgentDecision, AgentHistoryItem, PageSnapshot } from "../core/types.js";
+import { ContextPacket } from "../context/contextEngine.js";
 import { OpenAICompatibleModelClient } from "./openaiCompatibleClient.js";
 import { RuleBasedModelClient } from "./ruleBasedClient.js";
 
@@ -9,6 +10,7 @@ export interface DecisionInput {
   step: number;
   history: AgentHistoryItem[];
   snapshot: PageSnapshot;
+  contextPacket: ContextPacket;
 }
 
 export interface ModelClient {

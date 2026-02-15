@@ -74,6 +74,22 @@ const runtimeSchema = z.object({
     system: z.string().min(1),
     outputSchemaHint: z.string().min(1),
     actionPolicy: z.string().min(1)
+  }),
+  context: z.object({
+    maxRankedElements: z.number().int().positive(),
+    maxTextExcerptForModel: z.number().int().positive(),
+    keywordMinLength: z.number().int().positive(),
+    recentHistoryDepth: z.number().int().positive(),
+    stopWords: z.array(z.string().min(1)),
+    scoreWeights: z.object({
+      textMatch: z.number(),
+      ariaMatch: z.number(),
+      placeholderMatch: z.number(),
+      hrefMatch: z.number(),
+      interactiveRoleBonus: z.number(),
+      recentlyUsedBonus: z.number(),
+      disabledPenalty: z.number()
+    })
   })
 });
 

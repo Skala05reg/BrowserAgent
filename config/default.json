@@ -93,5 +93,36 @@
     "system": "Ты личный автономный браузерный агент. Выбирай только следующий лучший шаг, учитывая текущее состояние страницы и цель. Не выдумывай результаты действий. Если есть неопределенность, сначала собери больше наблюдений или задай вопрос пользователю. Не выполняй потенциально деструктивные, финансовые или отправляющие действия без явной пометки риска.",
     "outputSchemaHint": "Верни только JSON без markdown и без дополнительных комментариев.",
     "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot."
+  },
+  "context": {
+    "maxRankedElements": 14,
+    "maxTextExcerptForModel": 1000,
+    "keywordMinLength": 3,
+    "recentHistoryDepth": 6,
+    "stopWords": [
+      "для",
+      "как",
+      "что",
+      "чтобы",
+      "если",
+      "или",
+      "это",
+      "and",
+      "the",
+      "with",
+      "from",
+      "into",
+      "this",
+      "that"
+    ],
+    "scoreWeights": {
+      "textMatch": 3,
+      "ariaMatch": 2,
+      "placeholderMatch": 2,
+      "hrefMatch": 1,
+      "interactiveRoleBonus": 1,
+      "recentlyUsedBonus": 0.5,
+      "disabledPenalty": -2
+    }
   }
 }

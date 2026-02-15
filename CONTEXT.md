@@ -1,5 +1,25 @@
 # CONTEXT
 
+## 2026-02-15 — Priority 1: Context Engine
+
+### Что добавлено
+1. Реализован `ContextEngine` (`src/context/contextEngine.ts`):
+- извлечение ключевых слов задачи;
+- ранжирование интерактивных элементов по релевантности;
+- фильтрация top-N элементов для передачи в модель;
+- `attentionHints` для объяснимого фокуса на следующих шагах.
+
+2. Интеграция в цикл оркестратора (`src/core/orchestrator.ts`):
+- перед каждым решением строится `contextPacket`;
+- в live-логах выводятся метрики компрессии (`selectedElements/totalElements`) и подсказки фокуса.
+
+3. Интеграция в model prompt (`src/model/openaiCompatibleClient.ts`):
+- вместо передачи полного snapshot список элементов ограничен ранжированными кандидатами;
+- в prompt добавлены `summary`, `attention_hints`, `compression`.
+
+4. Конфигурирование через `config/default.json`:
+- добавлен раздел `context` с лимитами, stop-словами и весами scoring.
+
 ## 2026-02-15 — Полный перезапуск проекта с нуля
 
 ### Причина
@@ -80,4 +100,3 @@
 4. Добавить тесты
 - Unit-тесты для safety/pause/orchestrator.
 - Smoke E2E для базового сценария браузера.
-

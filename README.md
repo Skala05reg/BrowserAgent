@@ -26,6 +26,10 @@
 6. Подключаемый model-gateway:
    - `openai_compatible`
    - `rule_based` fallback
+7. Context-engine:
+   - ранжирование элементов по релевантности задаче,
+   - сжатый контекст для модели,
+   - attention hints и метрики компрессии.
 
 ## Быстрый старт
 
@@ -82,4 +86,3 @@ MODEL_PROVIDER=openai_compatible
 1. Для production-качества нужно усилить стратегию извлечения DOM и ранжирования элементов.
 2. `openai_compatible` ожидает совместимый endpoint `/chat/completions`.
 3. Есть fallback-режим, но он не заменяет полноценное reasoning-ядро модели.
-

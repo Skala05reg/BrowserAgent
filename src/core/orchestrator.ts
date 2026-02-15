@@ -4,6 +4,7 @@ import { ConsoleLogger } from "../telemetry/consoleLogger.js";
 import { BrowserRuntime } from "../browser/browserRuntime.js";
 import { ToolRegistry } from "../tools/toolRegistry.js";
 import { ModelGateway } from "../model/modelGateway.js";
+import { ContextEngine } from "../context/contextEngine.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { PauseController } from "./pauseController.js";
 import { AgentHistoryItem, AgentTaskResult, PendingApproval } from "./types.js";
@@ -22,6 +23,7 @@ export class AgentOrchestrator {
   private currentTask: string | null = null;
   private currentStep = 0;
   private history: AgentHistoryItem[] = [];
+  private readonly contextEngine: ContextEngine;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -31,7 +33,9 @@ export class AgentOrchestrator {
     private readonly modelGateway: ModelGateway,
     private readonly pauseController: PauseController,
     private readonly approvalGate: ApprovalGate
-  ) {}
+  ) {
+    this.contextEngine = new ContextEngine(config.context);
+  }
 
   public async runTask(task: string): Promise<AgentTaskResult> {
     if (this.running) {
@@ -71,7 +75,14 @@ export class AgentOrchestrator {
           textExcerpt: this.config.logging.showObservationDetails ? snapshot.textExcerpt : undefined
         });
 
-        const decision = await this.makeDecisionWithRetry(task, step, snapshot);
+        const contextPacket = this.contextEngine.build(task, snapshot, this.history);
+        this.logger.observation(`STEP ${step}: context compression`, {
+          selectedElements: contextPacket.compression.selectedElements,
+          totalElements: contextPacket.compression.totalElements,
+          attentionHints: contextPacket.attentionHints
+        });
+
+        const decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket);
 
         this.logger.decision(`STEP ${step}: решение агента`, {
           thoughtSummary: decision.thoughtSummary,
@@ -224,7 +235,12 @@ export class AgentOrchestrator {
     };
   }
 
-  private async makeDecisionWithRetry(task: string, step: number, snapshot: Awaited<ReturnType<BrowserRuntime["getSnapshot"]>>) {
+  private async makeDecisionWithRetry(
+    task: string,
+    step: number,
+    snapshot: Awaited<ReturnType<BrowserRuntime["getSnapshot"]>>,
+    contextPacket: ReturnType<ContextEngine["build"]>
+  ) {
     let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= this.config.agent.decisionRetryCount + 1; attempt += 1) {
@@ -233,7 +249,8 @@ export class AgentOrchestrator {
           task,
           step,
           history: this.history,
-          snapshot
+          snapshot,
+          contextPacket
         });
       } catch (error) {
         lastError = error;

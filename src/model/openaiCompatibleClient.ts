@@ -85,14 +85,16 @@ export class OpenAICompatibleModelClient implements ModelClient {
   }
 
   private buildUserPrompt(input: DecisionInput): string {
-    const compactElements = input.snapshot.elements.map((item) => ({
+    const compactElements = input.contextPacket.rankedElements.map((item) => ({
       id: item.id,
       role: item.role,
       text: item.text,
       placeholder: item.placeholder,
       ariaLabel: item.ariaLabel,
       href: item.href,
-      disabled: item.disabled
+      disabled: item.disabled,
+      score: item.score,
+      reasons: item.reasons
     }));
 
     const compactHistory = input.history.map((item) => ({
@@ -107,8 +109,10 @@ export class OpenAICompatibleModelClient implements ModelClient {
       `<task>${input.task}</task>`,
       `<step>${input.step}</step>`,
       `<page url="${input.snapshot.url}" title="${input.snapshot.title}">`,
-      `<text_excerpt>${input.snapshot.textExcerpt}</text_excerpt>`,
+      `<summary>${input.contextPacket.pageSummary}</summary>`,
+      `<attention_hints>${JSON.stringify(input.contextPacket.attentionHints)}</attention_hints>`,
       `<elements>${JSON.stringify(compactElements)}</elements>`,
+      `<compression>${JSON.stringify(input.contextPacket.compression)}</compression>`,
       `</page>`,
       `<history>${JSON.stringify(compactHistory)}</history>`,
       "Ответ верни JSON-объектом с полями: thoughtSummary, reasoning, riskLevel, requiresConfirmation, successCriteria, action{name,args}."

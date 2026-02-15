@@ -84,6 +84,25 @@ export interface PromptConfig {
   actionPolicy: string;
 }
 
+export interface ContextScoreWeights {
+  textMatch: number;
+  ariaMatch: number;
+  placeholderMatch: number;
+  hrefMatch: number;
+  interactiveRoleBonus: number;
+  recentlyUsedBonus: number;
+  disabledPenalty: number;
+}
+
+export interface ContextConfig {
+  maxRankedElements: number;
+  maxTextExcerptForModel: number;
+  keywordMinLength: number;
+  recentHistoryDepth: number;
+  stopWords: string[];
+  scoreWeights: ContextScoreWeights;
+}
+
 export interface RuntimeConfig {
   agent: AgentConfig;
   browser: BrowserConfig;
@@ -92,4 +111,5 @@ export interface RuntimeConfig {
   logging: LoggingConfig;
   cli: CliConfig;
   prompts: PromptConfig;
+  context: ContextConfig;
 }
