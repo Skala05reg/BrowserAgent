@@ -99,6 +99,16 @@ const runtimeSchema = z.object({
       action: z.string().min(1),
       verifier: z.string().min(1)
     })
+  }),
+  recovery: z.object({
+    enabled: z.boolean(),
+    retrySameActionOnTransientErrors: z.boolean(),
+    transientErrorKeywords: z.array(z.string().min(1)),
+    popupDismissKey: z.string().min(1),
+    waitMsAfterFailure: z.number().int().nonnegative(),
+    scrollRecoveryAmount: z.number().int().nonnegative(),
+    maxAutoRecoveryActions: z.number().int().positive(),
+    maxConsecutiveFailuresBeforePause: z.number().int().positive()
   })
 });
 

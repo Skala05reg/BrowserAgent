@@ -133,5 +133,23 @@
       "action": "Роль Action: делай конкретный следующий шаг в интерфейсе, который максимально приближает к завершению задачи.",
       "verifier": "Роль Verifier: проверь, что предыдущий шаг дал ожидаемый эффект, и при расхождении выбери корректирующее действие."
     }
+  },
+  "recovery": {
+    "enabled": true,
+    "retrySameActionOnTransientErrors": true,
+    "transientErrorKeywords": [
+      "timeout",
+      "detached",
+      "target closed",
+      "navigation",
+      "network",
+      "context destroyed",
+      "element is not attached"
+    ],
+    "popupDismissKey": "Escape",
+    "waitMsAfterFailure": 1200,
+    "scrollRecoveryAmount": 420,
+    "maxAutoRecoveryActions": 3,
+    "maxConsecutiveFailuresBeforePause": 4
   }
 }

@@ -115,6 +115,17 @@ export interface SubAgentsConfig {
   roles: SubAgentRoleConfig;
 }
 
+export interface RecoveryConfig {
+  enabled: boolean;
+  retrySameActionOnTransientErrors: boolean;
+  transientErrorKeywords: string[];
+  popupDismissKey: string;
+  waitMsAfterFailure: number;
+  scrollRecoveryAmount: number;
+  maxAutoRecoveryActions: number;
+  maxConsecutiveFailuresBeforePause: number;
+}
+
 export interface RuntimeConfig {
   agent: AgentConfig;
   browser: BrowserConfig;
@@ -125,4 +136,5 @@ export interface RuntimeConfig {
   prompts: PromptConfig;
   context: ContextConfig;
   subAgents: SubAgentsConfig;
+  recovery: RecoveryConfig;
 }

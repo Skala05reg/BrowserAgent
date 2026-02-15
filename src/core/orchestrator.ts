@@ -6,9 +6,10 @@ import { ToolRegistry } from "../tools/toolRegistry.js";
 import { ModelGateway } from "../model/modelGateway.js";
 import { ContextEngine } from "../context/contextEngine.js";
 import { SubAgentRouter } from "./subAgentRouter.js";
+import { RecoveryManager } from "./recoveryManager.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { PauseController } from "./pauseController.js";
-import { AgentHistoryItem, AgentTaskResult, PendingApproval } from "./types.js";
+import { AgentAction, AgentHistoryItem, AgentTaskResult, PendingApproval } from "./types.js";
 
 export interface OrchestratorStatus {
   running: boolean;
@@ -26,6 +27,8 @@ export class AgentOrchestrator {
   private history: AgentHistoryItem[] = [];
   private readonly contextEngine: ContextEngine;
   private readonly subAgentRouter: SubAgentRouter;
+  private readonly recoveryManager: RecoveryManager;
+  private consecutiveFailures = 0;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -38,6 +41,7 @@ export class AgentOrchestrator {
   ) {
     this.contextEngine = new ContextEngine(config.context);
     this.subAgentRouter = new SubAgentRouter(config.subAgents);
+    this.recoveryManager = new RecoveryManager(config.recovery);
   }
 
   public async runTask(task: string): Promise<AgentTaskResult> {
@@ -49,6 +53,7 @@ export class AgentOrchestrator {
     this.currentTask = task;
     this.currentStep = 0;
     this.history = [];
+    this.consecutiveFailures = 0;
     this.pauseController.reset();
 
     this.logger.system("Новая задача принята", { task });
@@ -146,6 +151,7 @@ export class AgentOrchestrator {
         }
 
         let resultMessage = "";
+        let actionSucceeded = false;
         try {
           this.logger.action(`STEP ${step}: выполняю ${decision.action.name}`, {
             args: decision.action.args
@@ -155,6 +161,7 @@ export class AgentOrchestrator {
           resultMessage = result.message;
 
           if (result.ok) {
+            actionSucceeded = true;
             this.logger.success(`STEP ${step}: действие выполнено`, {
               action: decision.action.name,
               message: result.message,
@@ -179,6 +186,30 @@ export class AgentOrchestrator {
           decision,
           actionResult: resultMessage
         });
+
+        if (actionSucceeded) {
+          this.consecutiveFailures = 0;
+        } else {
+          this.consecutiveFailures += 1;
+          const recovery = this.recoveryManager.buildPlan(decision, resultMessage, this.consecutiveFailures);
+
+          this.logger.warn(`STEP ${step}: запуск recovery-плана`, {
+            consecutiveFailures: this.consecutiveFailures,
+            rationale: recovery.rationale,
+            actions: recovery.actions
+          });
+
+          if (recovery.shouldPause) {
+            this.pauseController.pause();
+            this.logger.warn("Recovery перевел агента в паузу до ручной проверки.");
+            continue;
+          }
+
+          const recovered = await this.executeRecoveryActions(step, recovery.actions);
+          if (recovered) {
+            this.consecutiveFailures = 0;
+          }
+        }
 
         if (this.history.length > this.config.agent.maxHistoryItems) {
           this.history = this.history.slice(this.history.length - this.config.agent.maxHistoryItems);
@@ -291,5 +322,37 @@ export class AgentOrchestrator {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async executeRecoveryActions(step: number, actions: AgentAction[]): Promise<boolean> {
+    if (actions.length === 0) {
+      return false;
+    }
+
+    let successCount = 0;
+    for (const action of actions) {
+      try {
+        const result = await this.tools.execute(action);
+        if (result.ok) {
+          successCount += 1;
+          this.logger.success(`STEP ${step}: recovery action success`, {
+            action: action.name,
+            message: result.message
+          });
+        } else {
+          this.logger.warn(`STEP ${step}: recovery action failed`, {
+            action: action.name,
+            message: result.message
+          });
+        }
+      } catch (error) {
+        this.logger.error(`STEP ${step}: recovery action exception`, {
+          action: action.name,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    return successCount > 0;
   }
 }

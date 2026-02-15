@@ -1,5 +1,21 @@
 # CONTEXT
 
+## 2026-02-15 — Priority 3: Recovery Strategies
+
+### Что добавлено
+1. Реализован `RecoveryManager` (`src/core/recoveryManager.ts`):
+- определение recovery-плана на основе типа ошибки, действия и количества последовательных неудач;
+- стратегии: `wait + retry`, `dismiss popup`, `corrective scroll`, базовая пауза;
+- авто-пауза агента при достижении лимита последовательных ошибок.
+
+2. Интеграция в оркестратор (`src/core/orchestrator.ts`):
+- подсчет `consecutiveFailures`;
+- запуск recovery-плана при ошибке действия;
+- подробный лог recovery rationale и фактических recovery actions.
+
+3. Конфигурирование через `config/default.json`:
+- добавлен раздел `recovery` (триггеры transient-ошибок, лимиты, тайминги, параметры паузы).
+
 ## 2026-02-15 — Priority 2: Sub-agent Routing
 
 ### Что добавлено
