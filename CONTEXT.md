@@ -1,5 +1,29 @@
 # CONTEXT
 
+## 2026-02-15 — Priority 4: Tests
+
+### Что добавлено
+1. Подключен тестовый раннер `vitest`:
+- обновлен `package.json` (`npm test`).
+
+2. Добавлен набор unit/smoke тестов:
+- `tests/unit/pauseController.test.ts`
+- `tests/unit/approvalGate.test.ts`
+- `tests/unit/contextEngine.test.ts`
+- `tests/unit/recoveryManager.test.ts`
+- `tests/unit/orchestrator.smoke.test.ts`
+
+3. Покрытые области:
+- pause/resume/stop семантика;
+- approval lifecycle;
+- ranking/компрессия контекста;
+- recovery-планы и autopause;
+- базовый end-to-end цикл оркестратора.
+
+4. Верификация:
+- `npm run check` — passed;
+- `npm test` — passed (8/8).
+
 ## 2026-02-15 — Priority 3: Recovery Strategies
 
 ### Что добавлено

@@ -48,6 +48,13 @@ cp .env.example .env
 npm run dev
 ```
 
+Проверка качества:
+
+```bash
+npm run check
+npm test
+```
+
 ## Конфигурация
 
 Все основные параметры вынесены в `config/default.json`:
