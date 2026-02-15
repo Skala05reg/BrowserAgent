@@ -1,0 +1,97 @@
+{
+  "agent": {
+    "maxSteps": 60,
+    "maxHistoryItems": 12,
+    "stepDelayMs": 300,
+    "decisionRetryCount": 2,
+    "allowModelFallback": true,
+    "defaultStartUrl": "https://www.google.com"
+  },
+  "browser": {
+    "headless": false,
+    "slowMoMs": 0,
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "userDataDir": ".browser-profile",
+    "navigationTimeoutMs": 45000,
+    "actionTimeoutMs": 15000,
+    "waitAfterActionMs": 500,
+    "snapshot": {
+      "maxElements": 80,
+      "textExcerptLength": 1800,
+      "includeInputs": true,
+      "includeButtons": true,
+      "includeLinks": true,
+      "includeHeadings": true
+    }
+  },
+  "model": {
+    "provider": "openai_compatible",
+    "fallbackProvider": "rule_based",
+    "apiBaseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "MODEL_API_KEY",
+    "modelNameEnv": "MODEL_NAME",
+    "providerEnv": "MODEL_PROVIDER",
+    "baseUrlEnv": "MODEL_API_BASE_URL",
+    "modelName": "glm-4.7",
+    "temperature": 0.2,
+    "maxTokens": 1400,
+    "requestTimeoutMs": 45000
+  },
+  "safety": {
+    "requireConfirmationRiskLevels": [
+      "destructive",
+      "financial",
+      "external_send"
+    ],
+    "keywordTriggers": [
+      "удал",
+      "delete",
+      "remove",
+      "trash",
+      "spam",
+      "pay",
+      "оплат",
+      "purchase",
+      "куп",
+      "send",
+      "отправ",
+      "submit",
+      "confirm"
+    ]
+  },
+  "logging": {
+    "jsonlPath": "logs/agent-events.jsonl",
+    "showObservationDetails": true,
+    "timeFormat": "iso",
+    "colors": {
+      "system": "cyan",
+      "status": "blue",
+      "observation": "gray",
+      "decision": "magenta",
+      "action": "blueBright",
+      "approval": "yellow",
+      "success": "green",
+      "warn": "yellowBright",
+      "error": "redBright"
+    }
+  },
+  "cli": {
+    "banner": [
+      "Personal Browser Agent",
+      "Команды: /run <задача>, /pause, /resume, /stop, /approve, /deny, /status, /help, /exit",
+      "Можно просто ввести задачу без /run, если агент сейчас не запущен."
+    ],
+    "prompt": "agent> ",
+    "unknownCommandMessage": "Неизвестная команда. Используй /help.",
+    "busyMessage": "Агент уже выполняет задачу. Используй /pause, /stop или /status.",
+    "idleMessage": "Сейчас нет активной задачи. Введи /run <задача>."
+  },
+  "prompts": {
+    "system": "Ты личный автономный браузерный агент. Выбирай только следующий лучший шаг, учитывая текущее состояние страницы и цель. Не выдумывай результаты действий. Если есть неопределенность, сначала собери больше наблюдений или задай вопрос пользователю. Не выполняй потенциально деструктивные, финансовые или отправляющие действия без явной пометки риска.",
+    "outputSchemaHint": "Верни только JSON без markdown и без дополнительных комментариев.",
+    "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot."
+  }
+}

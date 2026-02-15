@@ -1,138 +1,85 @@
-# 🤖 AI Browser Agent
+# Personal Browser Agent
 
-> **Автономный мультимодальный веб-агент нового поколения, способный видеть, думать и действовать в браузере как человек.**
+Личный автономный агент для управления браузером в реальном времени:
+- видимый браузер (`Playwright`, non-headless),
+- pause/resume/stop во время выполнения,
+- safety-confirmation для рискованных шагов,
+- цветные live-логи решений, действий и наблюдений,
+- JSONL-аудит всех шагов.
 
-[![Python](https://img.shields.org/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Playwright](https://img.shields.org/badge/Playwright-1.40-green.svg)](https://playwright.dev/)
-[![LLM](https://img.shields.org/badge/LLM-Anthropic%20%7C%20OpenAI-purple.svg)](https://www.anthropic.com/)
-[![License](https://img.shields.org/badge/license-MIT-grey.svg)](LICENSE)
+## Что уже реализовано
 
-AI Browser Agent — это передовая система автоматизации, построенная на стыке современных исследований (SOTA) в области автономных агентов. В отличие от классических парсеров или Selenium-скриптов, этот агент использует **компьютерное зрение** и **сложные цепочки рассуждений (ReAct)** для навигации по динамическим веб-сайтам, выполнения рабочих задач и самообучения.
+1. Оркестратор шагов `observe -> decide -> act -> verify`.
+2. Управление с консоли:
+   - `/run <задача>`
+   - `/pause`
+   - `/resume`
+   - `/stop`
+   - `/approve`
+   - `/deny`
+   - `/status`
+   - `/help`
+   - `/exit`
+3. Механизм подтверждения перед рискованными действиями.
+4. Цветная телеметрия по типам событий и параллельная запись в `logs/agent-events.jsonl`.
+5. Поддержка `persistent session` через `.browser-profile`.
+6. Подключаемый model-gateway:
+   - `openai_compatible`
+   - `rule_based` fallback
 
----
-
-## ✨ Ключевые возможности
-
-### 🧠 Продвинутый Искусственный Интеллект
-*   **Архитектура Planner-Navigator:** Разделение обязанностей между "Стратегом" (планирование глобальной задачи) и "Навигатором" (исполнение действий в браузере).
-*   **ReAct Pattern:** Агент использует цикл *Наблюдение → Мысль → Действие*, анализируя результаты каждого шага перед совершением следующего.
-*   **Мультимодальное восприятие (Vision):** Агент не просто читает код страницы. Он "видит" интерфейс через скриншоты с наложением **Set-of-Marks (SoM)**, что позволяет ему взаимодействовать со сложными UI-элементами, canvas-графикой и иконками, недоступными для обычных текстовых анализаторов.
-
-### 🛡️ Надежность и Устойчивость (SOTA)
-*   **Интеллектуальное восстановление:** Система автоматически распознает ошибки (сетевые сбои, исчезнувшие элементы) и применяет стратегии экспоненциального повтора (Exponential Backoff).
-*   **Механизм отката (Rollback):** Если агент понимает, что зашел в тупик, он может осознанно вернуться назад и попробовать другой путь.
-*   **Умное ожидание:** Вместо жестких тайм-аутов агент использует события `domcontentloaded` и проверяет визуальную готовность элементов.
-
-### 📚 Память и Обучение
-*   **Эпизодическая память:** Интеграция с векторной базой данных (**Qdrant**) позволяет агенту запоминать успешные стратегии и ошибки прошлых сессий.
-*   **Саморефлексия:** После выполнения задач агент анализирует свои действия, формирует "выученные уроки" и сохраняет их для будущих запусков.
-
-### 🕵️ Stealth и Безопасность
-*   **Anti-Detection:** Маскировка под реального пользователя (User-Agent, паттерны поведения), позволяющая работать с защищенными сайтами (например, hh.ru).
-*   **Human-in-the-Loop:** Для чувствительных действий (оплата, удаление данных) агент запрашивает подтверждение у пользователя.
-
----
-
-## 🛠️ Установка
-
-### Предварительные требования
-*   Python 3.10+
-*   Браузеры (устанавливаются через Playwright)
-
-### Шаги установки
-
-1.  **Клонируйте репозиторий:**
-    ```bash
-    git clone https://github.com/your-username/ai-browser-agent.git
-    cd ai-browser-agent
-    ```
-
-2.  **Создайте виртуальное окружение:**
-    ```bash
-    python -m venv venv
-    # Windows:
-    .\venv\Scripts\activate
-    # Linux/Mac:
-    source venv/bin/activate
-    ```
-
-3.  **Установите зависимости:**
-    ```bash
-    pip install -r ai_browser_agent/requirements.txt
-    ```
-
-4.  **Установите браузеры Playwright:**
-    ```bash
-    playwright install
-    ```
-
----
-
-## ⚙️ Конфигурация
-
-Создайте файл `.env` в корне проекта. Вы можете использовать `.env.example` как шаблон.
-
-| Переменная | Описание | Обязательно |
-|------------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Ключ API для Claude 3.5 Sonnet (рекомендуется для Vision) | Да (или OpenAI) |
-| `OPENAI_API_KEY` | Ключ API для GPT-4 | Да (или Anthropic) |
-| `ANTHROPIC_BASE_URL`| Опционально, если используется прокси | Нет |
-
----
-
-## 🚀 Использование
-
-Запустите интерактивный CLI интерфейс:
+## Быстрый старт
 
 ```bash
-python -m ai_browser_agent.main
+npm install
+npx playwright install chromium
+cp .env.example .env
+npm run dev
 ```
 
-### Примеры задач
+## Конфигурация
 
-Просто введите задачу на естественном языке. Агент сам построит план.
+Все основные параметры вынесены в `config/default.json`:
+- лимиты шагов,
+- таймауты,
+- промпты,
+- safety-политики,
+- формат логирования,
+- модельный провайдер.
 
-> **Поиск работы:**
-> *"Найди 3 вакансии Python разработчика на hh.ru, выбери лучшие по рейтингу компании и откликнись на них с сопроводительным письмом, которое подчеркнет мой опыт с Django."*
+Переменные окружения:
 
-> **Сбор информации:**
-> *"Зайди на Y-Combinator News, найди топ-статью про AI, перейди в комментарии и суммаризируй основные аргументы спора."*
-
-> **Покупки (с подтверждением):**
-> *"Найди на Amazon книгу 'Designing Data-Intensive Applications', положи в корзину и дойди до этапа оплаты."*
-
----
-
-## 🏗️ Архитектура
-
-Проект построен на модульной архитектуре, обеспечивающей гибкость и расширяемость:
-
-```mermaid
-graph TD
-    User[Пользователь] -->|Задача| Planner[Planner Agent (CEO)]
-    Planner -->|Подзадачи| Navigator[Navigator Agent (Worker)]
-    Navigator -->|Действия| Browser[Browser Manager (Playwright)]
-    Browser -->|DOM + Скриншот| Brain[Agent Brain (LLM)]
-    Brain -->|Решение + Рефлексия| Memory[Vector Memory (Qdrant)]
-    Memory -->|Контекст| Brain
+```env
+MODEL_API_KEY=
+MODEL_API_BASE_URL=
+MODEL_NAME=glm-4.7
+MODEL_PROVIDER=openai_compatible
 ```
 
-*   **Browser Manager:** Обертка над Playwright для управления контекстами, вкладками и скрытия автоматизации.
-*   **DOM Parser:** Умный парсер, превращающий HTML в упрощенное Accessibility Tree для экономии токенов.
-*   **Memory System:** Векторное хранилище на базе `sentence-transformers` и Qdrant для семантического поиска по истории.
+Если `MODEL_PROVIDER=rule_based`, агент работает без API-ключа (ограниченный fallback-режим).
 
----
+## Как использовать паузу
 
-## 🗺️ Roadmap (Текущий статус)
+1. Запусти задачу: `/run ...`.
+2. В любой момент введи `/pause`.
+3. Выполни нужные ручные действия в браузере.
+4. Введи `/resume` и агент продолжит с текущего состояния страницы.
 
-- [x] **Phase 1: Foundation** (ReAct, Error Recovery, Rollback)
-- [x] **Phase 2: Perception** (Multimodal Vision, SoM Overlay)
-- [x] **Phase 3: Learning** (Long-term Memory, Reflection)
-- [ ] **Phase 4: Optimization** (Task Graph, Parallel Execution)
-- [ ] **Phase 5: Ecosystem** (Plugin Architecture, API Mode)
+## Структура проекта
 
----
+- `src/index.ts` — bootstrap.
+- `src/cli/repl.ts` — интерактивная консоль.
+- `src/core/orchestrator.ts` — цикл агента и контроль статуса.
+- `src/core/pauseController.ts` — pause/resume/stop.
+- `src/core/approvalGate.ts` — подтверждение рискованных действий.
+- `src/browser/browserRuntime.ts` — Playwright runtime + snapshot страницы.
+- `src/model/*` — модельные адаптеры.
+- `src/tools/toolRegistry.ts` — выполнение действий агента.
+- `src/telemetry/consoleLogger.ts` — цветной логгер + JSONL аудит.
+- `config/default.json` — все параметры.
 
-## 📄 Лицензия
+## Ограничения текущей версии
 
-Этот проект распространяется под лицензией MIT. Подробности см. в файле [LICENSE](LICENSE).
+1. Для production-качества нужно усилить стратегию извлечения DOM и ранжирования элементов.
+2. `openai_compatible` ожидает совместимый endpoint `/chat/completions`.
+3. Есть fallback-режим, но он не заменяет полноценное reasoning-ядро модели.
+
