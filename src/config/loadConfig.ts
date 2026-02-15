@@ -90,6 +90,15 @@ const runtimeSchema = z.object({
       recentlyUsedBonus: z.number(),
       disabledPenalty: z.number()
     })
+  }),
+  subAgents: z.object({
+    enabled: z.boolean(),
+    roles: z.object({
+      navigator: z.string().min(1),
+      extractor: z.string().min(1),
+      action: z.string().min(1),
+      verifier: z.string().min(1)
+    })
   })
 });
 

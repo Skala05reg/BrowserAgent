@@ -103,6 +103,18 @@ export interface ContextConfig {
   scoreWeights: ContextScoreWeights;
 }
 
+export interface SubAgentRoleConfig {
+  navigator: string;
+  extractor: string;
+  action: string;
+  verifier: string;
+}
+
+export interface SubAgentsConfig {
+  enabled: boolean;
+  roles: SubAgentRoleConfig;
+}
+
 export interface RuntimeConfig {
   agent: AgentConfig;
   browser: BrowserConfig;
@@ -112,4 +124,5 @@ export interface RuntimeConfig {
   cli: CliConfig;
   prompts: PromptConfig;
   context: ContextConfig;
+  subAgents: SubAgentsConfig;
 }

@@ -31,6 +31,7 @@ export class OpenAICompatibleModelClient implements ModelClient {
           content: [
             this.runtimeConfig.prompts.system,
             this.runtimeConfig.prompts.actionPolicy,
+            `Активная роль текущего шага: ${input.route.role}. Инструкция роли: ${input.route.roleInstruction}`,
             this.runtimeConfig.prompts.outputSchemaHint
           ].join("\n")
         },
@@ -108,6 +109,7 @@ export class OpenAICompatibleModelClient implements ModelClient {
     return [
       `<task>${input.task}</task>`,
       `<step>${input.step}</step>`,
+      `<sub_agent role="${input.route.role}" rationale="${input.route.rationale}">${input.route.roleInstruction}</sub_agent>`,
       `<page url="${input.snapshot.url}" title="${input.snapshot.title}">`,
       `<summary>${input.contextPacket.pageSummary}</summary>`,
       `<attention_hints>${JSON.stringify(input.contextPacket.attentionHints)}</attention_hints>`,

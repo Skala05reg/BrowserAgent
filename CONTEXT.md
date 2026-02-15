@@ -1,5 +1,25 @@
 # CONTEXT
 
+## 2026-02-15 — Priority 2: Sub-agent Routing
+
+### Что добавлено
+1. Реализован `SubAgentRouter` (`src/core/subAgentRouter.ts`) с ролями:
+- `navigator`
+- `extractor`
+- `action`
+- `verifier`
+
+2. Интеграция в оркестратор (`src/core/orchestrator.ts`):
+- на каждом шаге выбирается активная роль;
+- в live-логах отображаются выбранная роль и rationale.
+
+3. Интеграция в модельный слой:
+- `DecisionInput` расширен полем `route`;
+- в prompt модели добавлены роль, ролевая инструкция и rationale шага.
+
+4. Конфигурирование через `config/default.json`:
+- добавлен раздел `subAgents` с флагом `enabled` и role-specific инструкциями.
+
 ## 2026-02-15 — Priority 1: Context Engine
 
 ### Что добавлено

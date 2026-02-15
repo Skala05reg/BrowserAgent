@@ -5,6 +5,7 @@ import { BrowserRuntime } from "../browser/browserRuntime.js";
 import { ToolRegistry } from "../tools/toolRegistry.js";
 import { ModelGateway } from "../model/modelGateway.js";
 import { ContextEngine } from "../context/contextEngine.js";
+import { SubAgentRouter } from "./subAgentRouter.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { PauseController } from "./pauseController.js";
 import { AgentHistoryItem, AgentTaskResult, PendingApproval } from "./types.js";
@@ -24,6 +25,7 @@ export class AgentOrchestrator {
   private currentStep = 0;
   private history: AgentHistoryItem[] = [];
   private readonly contextEngine: ContextEngine;
+  private readonly subAgentRouter: SubAgentRouter;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -35,6 +37,7 @@ export class AgentOrchestrator {
     private readonly approvalGate: ApprovalGate
   ) {
     this.contextEngine = new ContextEngine(config.context);
+    this.subAgentRouter = new SubAgentRouter(config.subAgents);
   }
 
   public async runTask(task: string): Promise<AgentTaskResult> {
@@ -76,13 +79,18 @@ export class AgentOrchestrator {
         });
 
         const contextPacket = this.contextEngine.build(task, snapshot, this.history);
+        const route = this.subAgentRouter.selectRoute(step, task, snapshot, this.history);
         this.logger.observation(`STEP ${step}: context compression`, {
           selectedElements: contextPacket.compression.selectedElements,
           totalElements: contextPacket.compression.totalElements,
           attentionHints: contextPacket.attentionHints
         });
+        this.logger.observation(`STEP ${step}: sub-agent route`, {
+          role: route.role,
+          rationale: route.rationale
+        });
 
-        const decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket);
+        const decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
 
         this.logger.decision(`STEP ${step}: решение агента`, {
           thoughtSummary: decision.thoughtSummary,
@@ -239,7 +247,8 @@ export class AgentOrchestrator {
     task: string,
     step: number,
     snapshot: Awaited<ReturnType<BrowserRuntime["getSnapshot"]>>,
-    contextPacket: ReturnType<ContextEngine["build"]>
+    contextPacket: ReturnType<ContextEngine["build"]>,
+    route: ReturnType<SubAgentRouter["selectRoute"]>
   ) {
     let lastError: unknown = null;
 
@@ -250,7 +259,8 @@ export class AgentOrchestrator {
           step,
           history: this.history,
           snapshot,
-          contextPacket
+          contextPacket,
+          route
         });
       } catch (error) {
         lastError = error;
