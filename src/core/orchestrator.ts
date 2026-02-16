@@ -14,6 +14,7 @@ import { AgentAction, AgentHistoryItem, AgentTaskResult, PendingApproval } from 
 export interface OrchestratorStatus {
   running: boolean;
   paused: boolean;
+  pauseReason: "manual" | "ask_user" | "recovery" | null;
   stopped: boolean;
   step: number;
   currentTask: string | null;
@@ -29,6 +30,7 @@ export class AgentOrchestrator {
   private readonly subAgentRouter: SubAgentRouter;
   private readonly recoveryManager: RecoveryManager;
   private consecutiveFailures = 0;
+  private pauseReason: "manual" | "ask_user" | "recovery" | null = null;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -54,6 +56,7 @@ export class AgentOrchestrator {
     this.currentStep = 0;
     this.history = [];
     this.consecutiveFailures = 0;
+    this.pauseReason = null;
     this.pauseController.reset();
 
     this.logger.system("Новая задача принята", { task });
@@ -163,7 +166,11 @@ export class AgentOrchestrator {
           this.logger.warn("Агент просит ручное участие пользователя", {
             question: String(decision.action.args.question ?? "Нужна дополнительная информация")
           });
+          this.pauseReason = "ask_user";
           this.pauseController.pause();
+          this.logger.status("Ожидаю ручные действия в браузере", {
+            resumeHint: "После выполнения действия нажми Enter или введи /resume"
+          });
           continue;
         }
 
@@ -276,8 +283,12 @@ export class AgentOrchestrator {
           );
 
           if (recovery.shouldPause) {
+            this.pauseReason = "recovery";
             this.pauseController.pause();
             this.logger.warn("Recovery перевел агента в паузу до ручной проверки.");
+            this.logger.status("Ожидаю ручные действия в браузере", {
+              resumeHint: "После проверки нажми Enter или введи /resume"
+            });
             continue;
           }
 
@@ -315,21 +326,25 @@ export class AgentOrchestrator {
       this.running = false;
       this.currentTask = null;
       this.currentStep = 0;
+      this.pauseReason = null;
       this.approvalGate.deny();
     }
   }
 
   public pause(): void {
+    this.pauseReason = "manual";
     this.pauseController.pause();
     this.logger.status("Агент поставлен на паузу");
   }
 
   public resume(): void {
+    this.pauseReason = null;
     this.pauseController.resume();
     this.logger.status("Агент продолжил выполнение");
   }
 
   public stop(): void {
+    this.pauseReason = null;
     this.pauseController.stop();
     this.approvalGate.deny();
     this.logger.status("Запрошена остановка агента");
@@ -343,6 +358,7 @@ export class AgentOrchestrator {
     return {
       running: this.running,
       paused: this.pauseController.isPaused(),
+      pauseReason: this.pauseReason,
       stopped: this.pauseController.isStopped(),
       step: this.currentStep,
       currentTask: this.currentTask,

@@ -16,8 +16,12 @@
     },
     "userDataDir": ".browser-profile",
     "navigationTimeoutMs": 45000,
+    "navigationWaitUntil": "domcontentloaded",
     "actionTimeoutMs": 15000,
     "waitAfterActionMs": 500,
+    "snapshotWaitUntil": "domcontentloaded",
+    "snapshotWaitTimeoutMs": 1500,
+    "adoptLatestPageOnNewTab": true,
     "snapshot": {
       "maxElements": 80,
       "textExcerptLength": 1800,
@@ -91,8 +95,8 @@
   "cli": {
     "banner": [
       "Personal Browser Agent",
-      "Команды: /run <задача>, /pause, /resume, /stop, /approve, /deny, /status, /help, /exit",
-      "Можно просто ввести задачу без /run, если агент сейчас не запущен."
+      "Команды: /run <задача>, /pause, /resume, /continue, /stop, /approve, /deny, /status, /help, /exit",
+      "Можно просто ввести задачу без /run, если агент сейчас не запущен. После ask_user/recovery-паузы нажми Enter для продолжения."
     ],
     "prompt": "agent> ",
     "unknownCommandMessage": "Неизвестная команда. Используй /help.",

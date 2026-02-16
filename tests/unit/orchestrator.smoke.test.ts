@@ -20,8 +20,12 @@ function createRuntimeConfig(): RuntimeConfig {
       viewport: { width: 800, height: 600 },
       userDataDir: ".browser-profile",
       navigationTimeoutMs: 1000,
+      navigationWaitUntil: "domcontentloaded",
       actionTimeoutMs: 1000,
       waitAfterActionMs: 0,
+      snapshotWaitUntil: "domcontentloaded",
+      snapshotWaitTimeoutMs: 500,
+      adoptLatestPageOnNewTab: true,
       snapshot: {
         maxElements: 10,
         textExcerptLength: 200,

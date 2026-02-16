@@ -46,8 +46,14 @@ export class BrowserRuntime {
     });
 
     this.page = this.context.pages().at(0) ?? (await this.context.newPage());
-    this.page.setDefaultNavigationTimeout(this.config.navigationTimeoutMs);
-    this.page.setDefaultTimeout(this.config.actionTimeoutMs);
+    this.applyPageTimeouts(this.page);
+
+    if (this.config.adoptLatestPageOnNewTab) {
+      this.context.on("page", (newPage) => {
+        this.page = newPage;
+        this.applyPageTimeouts(newPage);
+      });
+    }
   }
 
   public async stop(): Promise<void> {
@@ -61,8 +67,11 @@ export class BrowserRuntime {
   }
 
   public async ensurePage(): Promise<Page> {
+    this.syncPageReference();
+
     if (!this.page) {
       await this.start();
+      this.syncPageReference();
     }
 
     if (!this.page) {
@@ -75,11 +84,11 @@ export class BrowserRuntime {
   public async getSnapshot(): Promise<PageSnapshot> {
     const page = await this.ensurePage();
 
-    // Ensure page is loaded to avoid "Execution context was destroyed" errors
+    // Soft wait: enough for stable DOM without waiting full heavy asset load.
     try {
-      await page.waitForLoadState("load", { timeout: 5000 });
-    } catch (e) {
-      // Ignore timeout, we'll try to get snapshot anyway
+      await page.waitForLoadState(this.config.snapshotWaitUntil, { timeout: this.config.snapshotWaitTimeoutMs });
+    } catch (_error) {
+      // Ignore timeout and capture snapshot from current DOM state.
     }
 
     const payload = await page.evaluate(
@@ -200,7 +209,22 @@ export class BrowserRuntime {
         if (!url) {
           return { ok: false, message: "navigate: empty url" };
         }
-        await page.goto(url);
+        const beforeUrl = page.url();
+        try {
+          await page.goto(url, {
+            waitUntil: this.config.navigationWaitUntil,
+            timeout: this.config.navigationTimeoutMs
+          });
+        } catch (error) {
+          if (this.isNavigationTimeout(error) && page.url() !== beforeUrl) {
+            await page.waitForTimeout(this.config.waitAfterActionMs);
+            return {
+              ok: true,
+              message: `Opened ${url} (partial load; timeout on ${this.config.navigationWaitUntil})`
+            };
+          }
+          throw error;
+        }
         await page.waitForTimeout(this.config.waitAfterActionMs);
         return { ok: true, message: `Opened ${url}` };
       }
@@ -255,5 +279,46 @@ export class BrowserRuntime {
       throw new Error(`Unknown elementId: ${elementId}. Request a new snapshot first.`);
     }
     return element.selector;
+  }
+
+  private applyPageTimeouts(target: Page): void {
+    target.setDefaultNavigationTimeout(this.config.navigationTimeoutMs);
+    target.setDefaultTimeout(this.config.actionTimeoutMs);
+  }
+
+  private syncPageReference(): void {
+    if (!this.context) {
+      return;
+    }
+
+    const pages = this.context.pages().filter((item) => !item.isClosed());
+    if (pages.length === 0) {
+      return;
+    }
+
+    if (!this.page || this.page.isClosed()) {
+      const replacement = pages.at(-1) ?? pages[0];
+      if (!replacement) {
+        return;
+      }
+      this.page = replacement;
+      this.applyPageTimeouts(replacement);
+      return;
+    }
+
+    if (this.config.adoptLatestPageOnNewTab) {
+      const last = pages.at(-1);
+      if (last && last !== this.page) {
+        this.page = last;
+        this.applyPageTimeouts(last);
+      }
+    }
+  }
+
+  private isNavigationTimeout(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    return error.message.toLowerCase().includes("timeout");
   }
 }

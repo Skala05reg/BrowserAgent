@@ -51,6 +51,11 @@ export class AgentCli {
 
   private async handleLine(raw: string): Promise<void> {
     if (!raw) {
+      const status = this.orchestrator.getStatus();
+      if (status.running && status.paused && !status.pendingApproval && status.pauseReason !== "manual") {
+        this.logger.status("Получен Enter: продолжаю выполнение после ручного шага");
+        this.orchestrator.resume();
+      }
       this.rl.prompt();
       return;
     }
@@ -68,6 +73,12 @@ export class AgentCli {
     }
 
     if (raw === "/resume") {
+      this.orchestrator.resume();
+      this.rl.prompt();
+      return;
+    }
+
+    if (raw === "/continue") {
       this.orchestrator.resume();
       this.rl.prompt();
       return;
@@ -160,11 +171,13 @@ export class AgentCli {
     this.logger.system("  /run <задача>  - запустить задачу");
     this.logger.system("  /pause         - поставить агента на паузу");
     this.logger.system("  /resume        - продолжить работу агента");
+    this.logger.system("  /continue      - алиас для /resume");
     this.logger.system("  /stop          - остановить текущую задачу");
     this.logger.system("  /approve       - подтвердить рискованное действие");
     this.logger.system("  /deny          - отклонить рискованное действие");
     this.logger.system("  /status        - показать текущее состояние");
     this.logger.system("  /help          - показать справку");
     this.logger.system("  /exit          - завершить программу");
+    this.logger.system("  Enter (пустая строка) - продолжить после ask_user/recovery-паузы");
   }
 }

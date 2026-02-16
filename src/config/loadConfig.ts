@@ -19,8 +19,12 @@ const runtimeSchema = z.object({
     viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
     userDataDir: z.string().min(1),
     navigationTimeoutMs: z.number().int().positive(),
+    navigationWaitUntil: z.enum(["load", "domcontentloaded", "networkidle"]),
     actionTimeoutMs: z.number().int().positive(),
     waitAfterActionMs: z.number().int().nonnegative(),
+    snapshotWaitUntil: z.enum(["load", "domcontentloaded", "networkidle"]),
+    snapshotWaitTimeoutMs: z.number().int().positive(),
+    adoptLatestPageOnNewTab: z.boolean(),
     snapshot: z.object({
       maxElements: z.number().int().positive(),
       textExcerptLength: z.number().int().positive(),

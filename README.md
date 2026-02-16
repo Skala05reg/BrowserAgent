@@ -14,6 +14,7 @@
    - `/run <задача>`
    - `/pause`
    - `/resume`
+   - `/continue` (алиас для `/resume`)
    - `/stop`
    - `/approve`
    - `/deny`
@@ -25,7 +26,7 @@
    - компактный мониторинговый поток в терминале;
    - подробный debug-поток в `logs/agent-debug.txt`;
    - структурированный аудит в `logs/agent-events.jsonl`.
-5. Поддержка `persistent session` через `.browser-profile`.
+5. Поддержка `persistent session` через `.browser-profile` (логины/куки сохраняются между перезапусками агента при том же `userDataDir`).
 6. Подключаемый model-gateway:
    - `openai_compatible`
    - `rule_based` fallback
@@ -115,6 +116,17 @@ npm run model:check
 2. В любой момент введи `/pause`.
 3. Выполни нужные ручные действия в браузере.
 4. Введи `/resume` и агент продолжит с текущего состояния страницы.
+
+Если агент сам попросил ручной шаг (`ask_user` / recovery-пауза):
+- выполни действие в браузере;
+- нажми `Enter` в терминале (или `/resume`, `/continue`) для продолжения.
+
+## Загрузка Страниц
+
+Чтобы агент не ждал полную загрузку тяжелых страниц:
+- навигация использует `browser.navigationWaitUntil` (по умолчанию `domcontentloaded`);
+- snapshots используют короткий soft-wait `browser.snapshotWaitUntil` + `browser.snapshotWaitTimeoutMs`;
+- можно включить `browser.adoptLatestPageOnNewTab`, чтобы агент автоматически продолжал работу в новой вкладке.
 
 ## Структура проекта
 

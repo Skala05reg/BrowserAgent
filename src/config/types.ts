@@ -27,8 +27,12 @@ export interface BrowserConfig {
   };
   userDataDir: string;
   navigationTimeoutMs: number;
+  navigationWaitUntil: "load" | "domcontentloaded" | "networkidle";
   actionTimeoutMs: number;
   waitAfterActionMs: number;
+  snapshotWaitUntil: "load" | "domcontentloaded" | "networkidle";
+  snapshotWaitTimeoutMs: number;
+  adoptLatestPageOnNewTab: boolean;
   snapshot: BrowserSnapshotConfig;
 }
 

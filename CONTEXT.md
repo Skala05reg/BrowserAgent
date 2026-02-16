@@ -1,5 +1,38 @@
 # CONTEXT
 
+## 2026-02-16 — Resume UX + Fast Navigation Wait Modes
+
+### Задачи
+1. Уточнить и усилить UX ручного логина через `ask_user`.
+2. Устранить лишние долгие ожидания полной загрузки тяжелых страниц.
+3. Сохранить устойчивую persistent session между перезапусками.
+
+### Что реализовано
+1. Режимы ожидания страницы вынесены в конфиг и ускорены:
+- `browser.navigationWaitUntil` (дефолт: `domcontentloaded`);
+- `browser.snapshotWaitUntil` (дефолт: `domcontentloaded`);
+- `browser.snapshotWaitTimeoutMs` (дефолт: `1500`).
+
+2. Навигация в `BrowserRuntime` улучшена:
+- `page.goto` теперь использует `waitUntil` из конфига вместо жесткого ожидания полного `load`;
+- при timeout навигации действие считается успешным, если URL уже изменился (partial load fallback).
+
+3. Snapshot стал мягче:
+- вместо жесткого `waitForLoadState('load', 5000)` используется короткий soft-wait с конфигурируемым state/timeout.
+
+4. Добавлено авто-подхватывание новой вкладки:
+- `browser.adoptLatestPageOnNewTab` (дефолт: `true`);
+- runtime переключает активную страницу на последний открытый tab и применяет таймауты к нему.
+
+5. UX после `ask_user`/recovery-паузы:
+- оркестратор сохраняет `pauseReason` (`manual` / `ask_user` / `recovery`) в статусе;
+- при `ask_user` и recovery-паузе выводится явная подсказка о продолжении;
+- в CLI пустой Enter автоматически делает resume для не-manual паузы;
+- добавлена команда `/continue` как алиас `/resume`.
+
+6. Документация обновлена:
+- README дополнен разделами про persistent session, resume после ручных действий, и fast page loading behavior.
+
 ## 2026-02-16 — Logging Split: Compact Terminal + Detailed Debug File
 
 ### Задача
