@@ -69,12 +69,19 @@ npm test
 
 ```env
 MODEL_API_KEY=
-MODEL_API_BASE_URL=
+MODEL_API_BASE_URL=https://api.z.ai/api/anthropic
 MODEL_NAME=glm-4.7
-MODEL_PROVIDER=openai_compatible
+MODEL_PROVIDER=anthropic_compatible
 ```
 
 Если `MODEL_PROVIDER=rule_based`, агент работает без API-ключа (ограниченный fallback-режим).
+
+Рекомендуемый режим для `GLM Coding Lite-Yearly Plan`:
+- `MODEL_PROVIDER=anthropic_compatible`
+- `MODEL_API_BASE_URL=https://api.z.ai/api/anthropic`
+- токен можно не хранить в `.env`, если он уже есть в `~/.claude/settings.json` как `ANTHROPIC_AUTH_TOKEN`.
+
+Дополнительно доступен `openai_compatible` режим через endpoint `https://api.z.ai/api/coding/paas/v4`.
 
 Проверка подключения к модели:
 
@@ -82,7 +89,9 @@ MODEL_PROVIDER=openai_compatible
 npm run model:check
 ```
 
-Команда отправляет тестовый `chat/completions` запрос на `MODEL_API_BASE_URL` и печатает ответ.
+Команда отправляет тестовый запрос в зависимости от `MODEL_PROVIDER`:
+- `openai_compatible` -> `chat/completions`
+- `anthropic_compatible` -> `v1/messages`
 
 ## Как использовать паузу
 
@@ -107,5 +116,5 @@ npm run model:check
 ## Ограничения текущей версии
 
 1. Для production-качества нужно усилить стратегию извлечения DOM и ранжирования элементов.
-2. `openai_compatible` ожидает совместимый endpoint `/chat/completions`.
+2. Для `openai_compatible` нужен совместимый endpoint `/chat/completions`, для `anthropic_compatible` — `/v1/messages`.
 3. Есть fallback-режим, но он не заменяет полноценное reasoning-ядро модели.

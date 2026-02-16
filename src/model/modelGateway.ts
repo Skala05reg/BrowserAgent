@@ -3,6 +3,7 @@ import { RuntimeConfig } from "../config/types.js";
 import { AgentDecision, AgentHistoryItem, PageSnapshot } from "../core/types.js";
 import { ContextPacket } from "../context/contextEngine.js";
 import { SubAgentRoute } from "../core/subAgentRouter.js";
+import { AnthropicCompatibleModelClient } from "./anthropicCompatibleClient.js";
 import { OpenAICompatibleModelClient } from "./openaiCompatibleClient.js";
 import { RuleBasedModelClient } from "./ruleBasedClient.js";
 
@@ -22,14 +23,89 @@ export interface ModelClient {
 const decisionSchema = z.object({
   thoughtSummary: z.string().min(1),
   reasoning: z.string().min(1),
-  riskLevel: z.enum(["safe", "sensitive", "destructive", "financial", "external_send"]),
+  riskLevel: z.string().min(1),
   requiresConfirmation: z.boolean(),
   successCriteria: z.string().min(1),
   action: z.object({
     name: z.enum(["navigate", "click", "type", "press", "scroll", "wait", "finish", "ask_user"]),
-    args: z.record(z.unknown())
+    args: z.unknown()
   })
 });
+
+type CanonicalRiskLevel = "safe" | "sensitive" | "destructive" | "financial" | "external_send";
+
+function normalizeRiskLevel(value: string): CanonicalRiskLevel {
+  const normalized = value.toLowerCase().trim();
+
+  const map: Record<string, CanonicalRiskLevel> = {
+    safe: "safe",
+    low: "safe",
+    minimal: "safe",
+    sensitive: "sensitive",
+    medium: "sensitive",
+    moderate: "sensitive",
+    destructive: "destructive",
+    high: "destructive",
+    critical: "destructive",
+    financial: "financial",
+    payment: "financial",
+    external_send: "external_send",
+    send: "external_send",
+    outbound: "external_send"
+  };
+
+  return map[normalized] ?? "sensitive";
+}
+
+function normalizeDecisionRisk(decision: z.infer<typeof decisionSchema>): AgentDecision {
+  const recoverArgsFromString = (actionName: string, raw: string): Record<string, unknown> => {
+    const recovered: Record<string, unknown> = {};
+    const urlMatch = raw.match(/https?:\/\/[^\s"'`]+/i);
+    const elementIdMatch = raw.match(/e-\d+/i);
+    const keyMatch = raw.match(/enter|escape|tab|arrowup|arrowdown|arrowleft|arrowright/i);
+    const msMatch = raw.match(/(\d{2,6})/);
+
+    if (actionName === "navigate" && urlMatch) {
+      recovered.url = urlMatch[0];
+    }
+    if ((actionName === "click" || actionName === "type") && elementIdMatch) {
+      recovered.elementId = elementIdMatch[0];
+    }
+    if (actionName === "press" && keyMatch) {
+      recovered.key = keyMatch[0];
+    }
+    if (actionName === "wait" && msMatch) {
+      recovered.ms = Number(msMatch[1]);
+    }
+
+    return recovered;
+  };
+
+  let normalizedArgs: Record<string, unknown> = {};
+  if (typeof decision.action.args === "string") {
+    try {
+      const parsed = JSON.parse(decision.action.args);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        normalizedArgs = parsed as Record<string, unknown>;
+      } else {
+        normalizedArgs = recoverArgsFromString(decision.action.name, decision.action.args);
+      }
+    } catch {
+      normalizedArgs = recoverArgsFromString(decision.action.name, decision.action.args);
+    }
+  } else if (decision.action.args && typeof decision.action.args === "object" && !Array.isArray(decision.action.args)) {
+    normalizedArgs = decision.action.args as Record<string, unknown>;
+  }
+
+  return {
+    ...decision,
+    riskLevel: normalizeRiskLevel(decision.riskLevel),
+    action: {
+      ...decision.action,
+      args: normalizedArgs
+    }
+  };
+}
 
 export class ModelGateway {
   private readonly primary: ModelClient;
@@ -43,19 +119,23 @@ export class ModelGateway {
   public async decide(input: DecisionInput): Promise<AgentDecision> {
     try {
       const decision = await this.primary.decide(input);
-      return decisionSchema.parse(decision);
+      return normalizeDecisionRisk(decisionSchema.parse(decision));
     } catch (error) {
       if (!this.runtimeConfig.agent.allowModelFallback) {
         throw error;
       }
       const fallbackDecision = await this.fallback.decide(input);
-      return decisionSchema.parse(fallbackDecision);
+      return normalizeDecisionRisk(decisionSchema.parse(fallbackDecision));
     }
   }
 
   private buildClient(provider: string, apiKey: string | undefined): ModelClient {
     if (provider === "openai_compatible") {
       return new OpenAICompatibleModelClient(this.runtimeConfig, apiKey);
+    }
+
+    if (provider === "anthropic_compatible") {
+      return new AnthropicCompatibleModelClient(this.runtimeConfig, apiKey);
     }
 
     if (provider === "rule_based") {
@@ -69,7 +149,7 @@ export class ModelGateway {
 export function parseDecisionFromText(text: string): AgentDecision {
   const trimmed = text.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    return decisionSchema.parse(JSON.parse(trimmed));
+    return normalizeDecisionRisk(decisionSchema.parse(JSON.parse(trimmed)));
   }
 
   const start = trimmed.indexOf("{");
@@ -80,5 +160,5 @@ export function parseDecisionFromText(text: string): AgentDecision {
   }
 
   const extracted = trimmed.slice(start, end + 1);
-  return decisionSchema.parse(JSON.parse(extracted));
+  return normalizeDecisionRisk(decisionSchema.parse(JSON.parse(extracted)));
 }

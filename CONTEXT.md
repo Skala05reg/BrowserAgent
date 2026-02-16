@@ -1,5 +1,69 @@
 # CONTEXT
 
+## 2026-02-16 — Legacy Request Path Restored (Z.AI via Claude Settings)
+
+### Контекст
+По запросу пользователя была проанализирована рабочая логика из старой версии агента (до перезапуска проекта).
+Рабочий путь запросов к `z.ai` тогда использовал:
+- `Anthropic`-совместимый API,
+- `ANTHROPIC_AUTH_TOKEN` и `ANTHROPIC_BASE_URL`,
+- автоподхват из `~/.claude/settings.json`.
+
+### Что реализовано в текущей версии
+1. Добавлен новый модельный провайдер: `anthropic_compatible`.
+- Файл: `src/model/anthropicCompatibleClient.ts`
+- Endpoint: `<baseUrl>/v1/messages`
+- Заголовки: `x-api-key`, `anthropic-version`.
+
+2. Добавлен резолвер кредов:
+- Файл: `src/model/credentials.ts`
+- Источники (по приоритету):
+  - env (`MODEL_API_KEY` / `ANTHROPIC_AUTH_TOKEN`);
+  - `~/.claude/settings.json` (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, default model).
+
+3. Обновлен `ModelGateway`:
+- Поддержка `MODEL_PROVIDER=anthropic_compatible`.
+
+4. `model:check` расширен:
+- Поддерживает `openai_compatible` и `anthropic_compatible`.
+- Для `anthropic_compatible` использует ту же схему `v1/messages`.
+
+5. Удалены временные `Cursor`-заголовки из openai-пути:
+- Сохранён только стандартный протокол запроса.
+
+6. Дефолтные параметры переключены на старый рабочий путь:
+- `config/default.json`: `provider=anthropic_compatible`, `apiBaseUrl=https://api.z.ai/api/anthropic`.
+- `.env.example` обновлен под этот режим.
+
+## 2026-02-15 — Z.AI Coding Plan Compatibility Fix
+
+### Проблема
+`model:check` возвращал:
+- `HTTP 429`
+- `error.code=1113`
+- `Insufficient balance or no resource package`
+
+при использовании `MODEL_API_BASE_URL=https://api.z.ai/api/paas/v4`.
+
+### Что изменено
+1. Обновлен рекомендуемый endpoint для Coding Plan:
+- `https://api.z.ai/api/coding/paas/v4` (OpenAI-compatible).
+
+2. Обновлены дефолты и примеры:
+- `config/default.json` -> `model.apiBaseUrl` теперь `https://api.z.ai/api/coding/paas/v4`.
+- `.env.example` обновлен под coding endpoint.
+
+3. Исправлена совместимость с ответами GLM:
+- В `src/model/modelGateway.ts` добавлена нормализация `riskLevel`:
+  - `low -> safe`
+  - `medium/moderate -> sensitive`
+  - `high/critical -> destructive`
+  - и др. с безопасным fallback.
+- Это устранило падение валидации схемы при ответах модели.
+
+4. Security fix:
+- Из `.env.example` удален реальный API-ключ (заменен на пустой placeholder).
+
 ## 2026-02-15 — Priority 5: GLM Endpoint Connection Check
 
 ### Что добавлено

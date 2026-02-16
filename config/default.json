@@ -28,9 +28,9 @@
     }
   },
   "model": {
-    "provider": "openai_compatible",
+    "provider": "anthropic_compatible",
     "fallbackProvider": "rule_based",
-    "apiBaseUrl": "https://api.openai.com/v1",
+    "apiBaseUrl": "https://api.z.ai/api/anthropic",
     "apiKeyEnv": "MODEL_API_KEY",
     "modelNameEnv": "MODEL_NAME",
     "providerEnv": "MODEL_PROVIDER",
