@@ -3,14 +3,18 @@ import { AgentHistoryItem, PageElementDescriptor, PageSnapshot } from "../core/t
 
 export interface RankedElement {
   id: string;
+  tag: string;
   role: string;
   text: string;
   ariaLabel: string;
   placeholder: string;
   href: string;
+  rawHref?: string;
   disabled: boolean;
   inputType?: string;
   name?: string;
+  domId?: string;
+  region?: "main" | "header" | "footer" | "nav" | "aside" | "unknown";
   inViewport?: boolean;
   score: number;
   reasons: string[];
@@ -43,11 +47,11 @@ export class ContextEngine {
 
   public build(task: string, snapshot: PageSnapshot, history: AgentHistoryItem[]): ContextPacket {
     const taskKeywords = this.extractTaskKeywords(task);
-    const recentlyUsedIds = this.extractRecentlyUsedElementIds(history);
+    const recentElementStats = this.extractRecentElementStats(history);
     const loopHints = this.buildLoopHints(history);
 
     const ranked = snapshot.elements
-      .map((element) => this.rankElement(element, taskKeywords, recentlyUsedIds))
+      .map((element) => this.rankElement(element, taskKeywords, recentElementStats))
       .sort((a, b) => b.score - a.score)
       .slice(0, this.config.maxRankedElements);
 
@@ -79,20 +83,37 @@ export class ContextEngine {
     return Array.from(unique).slice(0, 24);
   }
 
-  private extractRecentlyUsedElementIds(history: AgentHistoryItem[]): Set<string> {
-    const ids = new Set<string>();
+  private extractRecentElementStats(history: AgentHistoryItem[]): {
+    usageCountByElementId: Map<string, number>;
+    failedElementIds: Set<string>;
+  } {
+    const usageCountByElementId = new Map<string, number>();
+    const failedElementIds = new Set<string>();
 
     for (const item of history.slice(-this.config.recentHistoryDepth)) {
       const elementId = item.decision.action.args.elementId;
       if (typeof elementId === "string" && elementId.length > 0) {
-        ids.add(elementId);
+        usageCountByElementId.set(elementId, (usageCountByElementId.get(elementId) ?? 0) + 1);
+        if (!item.actionSucceeded) {
+          failedElementIds.add(elementId);
+        }
       }
     }
 
-    return ids;
+    return {
+      usageCountByElementId,
+      failedElementIds
+    };
   }
 
-  private rankElement(element: PageElementDescriptor, taskKeywords: string[], recentlyUsedIds: Set<string>): RankedElement {
+  private rankElement(
+    element: PageElementDescriptor,
+    taskKeywords: string[],
+    recentElementStats: {
+      usageCountByElementId: Map<string, number>;
+      failedElementIds: Set<string>;
+    }
+  ): RankedElement {
     const normalizedText = normalizeText([element.text, element.ariaLabel, element.placeholder, element.href].join(" "));
     const reasons: string[] = [];
     let score = 0;
@@ -122,9 +143,25 @@ export class ContextEngine {
       reasons.push("interactive-role");
     }
 
-    if (recentlyUsedIds.has(element.id)) {
+    const usageCount = recentElementStats.usageCountByElementId.get(element.id) ?? 0;
+    if (usageCount > 0) {
       score += this.config.scoreWeights.recentlyUsedBonus;
       reasons.push("recently-used");
+      if (usageCount > 1) {
+        score += this.config.scoreWeights.repeatedRecentUsePenalty * (usageCount - 1);
+        reasons.push(`repeated:${usageCount}`);
+      }
+    }
+
+    if (recentElementStats.failedElementIds.has(element.id)) {
+      score += this.config.scoreWeights.recentlyFailedPenalty;
+      reasons.push("recently-failed");
+    }
+
+    const region = (element.region ?? "unknown").toLowerCase();
+    if (region === "header" || region === "footer" || region === "nav") {
+      score += this.config.scoreWeights.nonMainRegionPenalty;
+      reasons.push(`region:${region}`);
     }
 
     if (element.disabled) {

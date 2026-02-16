@@ -24,6 +24,9 @@ describe("ContextEngine", () => {
         hrefMatch: 1,
         interactiveRoleBonus: 1,
         recentlyUsedBonus: 1,
+        repeatedRecentUsePenalty: -0.5,
+        recentlyFailedPenalty: -1,
+        nonMainRegionPenalty: -1,
         disabledPenalty: -2,
         nonTextInputPenalty: -2,
         lowSignalElementPenalty: -0.5
@@ -89,6 +92,9 @@ describe("ContextEngine", () => {
         hrefMatch: 1,
         interactiveRoleBonus: 1,
         recentlyUsedBonus: 1,
+        repeatedRecentUsePenalty: -0.5,
+        recentlyFailedPenalty: -1,
+        nonMainRegionPenalty: -1,
         disabledPenalty: -2,
         nonTextInputPenalty: -4,
         lowSignalElementPenalty: -0.5
@@ -155,6 +161,9 @@ describe("ContextEngine", () => {
         hrefMatch: 1,
         interactiveRoleBonus: 1,
         recentlyUsedBonus: 1,
+        repeatedRecentUsePenalty: -0.5,
+        recentlyFailedPenalty: -1,
+        nonMainRegionPenalty: -1,
         disabledPenalty: -2,
         nonTextInputPenalty: -2,
         lowSignalElementPenalty: -0.5
@@ -249,5 +258,74 @@ describe("ContextEngine", () => {
 
     expect(packet.attentionHints.some((item) => item.includes("Антицикл"))).toBe(true);
     expect(packet.attentionHints.some((item) => item.includes("Недавняя ошибка"))).toBe(true);
+  });
+
+  it("prefers main-content elements over header navigation", () => {
+    const engine = new ContextEngine({
+      maxRankedElements: 5,
+      maxTextExcerptForModel: 200,
+      keywordMinLength: 3,
+      recentHistoryDepth: 4,
+      stopWords: ["и", "the"],
+      nonTextInputTypes: ["checkbox", "radio", "button", "submit"],
+      loopHints: {
+        historyWindow: 6,
+        repeatActionThreshold: 3,
+        sameUrlThreshold: 4,
+        failedActionHintLimit: 2
+      },
+      scoreWeights: {
+        textMatch: 3,
+        ariaMatch: 2,
+        placeholderMatch: 2,
+        hrefMatch: 1,
+        interactiveRoleBonus: 1,
+        recentlyUsedBonus: 1,
+        repeatedRecentUsePenalty: -0.5,
+        recentlyFailedPenalty: -1,
+        nonMainRegionPenalty: -3,
+        disabledPenalty: -2,
+        nonTextInputPenalty: -2,
+        lowSignalElementPenalty: -0.5
+      }
+    });
+
+    const packet = engine.build(
+      "найди вакансии",
+      {
+        url: "https://example.com",
+        title: "Search",
+        textExcerpt: "results",
+        elements: [
+          {
+            id: "e-1",
+            tag: "a",
+            role: "a",
+            text: "Вакансии",
+            placeholder: "",
+            ariaLabel: "",
+            href: "/menu/vacancies",
+            value: "",
+            disabled: false,
+            region: "header"
+          },
+          {
+            id: "e-2",
+            tag: "a",
+            role: "a",
+            text: "Вакансии",
+            placeholder: "",
+            ariaLabel: "",
+            href: "/search/vacancy",
+            value: "",
+            disabled: false,
+            region: "main"
+          }
+        ]
+      },
+      []
+    );
+
+    expect(packet.rankedElements[0]?.id).toBe("e-2");
   });
 });

@@ -6,6 +6,17 @@ import { PageSnapshot, ToolExecutionResult } from "../core/types.js";
 interface InternalElement {
   id: string;
   selector: string;
+  tag: string;
+  role: string;
+  text: string;
+  placeholder: string;
+  ariaLabel: string;
+  href: string;
+  rawHref: string;
+  inputType: string;
+  name: string;
+  domId: string;
+  region: "main" | "header" | "footer" | "nav" | "aside" | "unknown";
 }
 
 interface SnapshotPayload {
@@ -20,10 +31,13 @@ interface SnapshotPayload {
     placeholder: string;
     ariaLabel: string;
     href: string;
+    rawHref: string;
     value: string;
     disabled: boolean;
     inputType: string;
     name: string;
+    domId: string;
+    region: "main" | "header" | "footer" | "nav" | "aside" | "unknown";
     inViewport: boolean;
     selector: string;
   }>;
@@ -112,9 +126,42 @@ export class BrowserRuntime {
         }
 
         function toSelector(element: Element): string {
+          function escapeAttr(value: string): string {
+            return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          }
+
           const html = element as HTMLElement;
           if (html.id) {
             return `#${CSS.escape(html.id)}`;
+          }
+
+          if (element instanceof HTMLAnchorElement) {
+            const rawHref = element.getAttribute("href") ?? "";
+            if (rawHref.trim().length > 0) {
+              return `a[href="${escapeAttr(rawHref)}"]`;
+            }
+          }
+
+          if (element instanceof HTMLInputElement) {
+            const inputType = (element.type ?? "").toLowerCase();
+            if (element.name) {
+              if (inputType) {
+                return `input[name="${escapeAttr(element.name)}"][type="${escapeAttr(inputType)}"]`;
+              }
+              return `input[name="${escapeAttr(element.name)}"]`;
+            }
+          }
+
+          const ariaLabel = element.getAttribute("aria-label") ?? "";
+          if (ariaLabel.trim().length > 0) {
+            return `${element.tagName.toLowerCase()}[aria-label="${escapeAttr(ariaLabel)}"]`;
+          }
+
+          if ("placeholder" in html && typeof (html as HTMLInputElement).placeholder === "string") {
+            const placeholder = (html as HTMLInputElement).placeholder ?? "";
+            if (placeholder.trim().length > 0) {
+              return `${element.tagName.toLowerCase()}[placeholder="${escapeAttr(placeholder)}"]`;
+            }
           }
 
           const parts: string[] = [];
@@ -185,6 +232,25 @@ export class BrowserRuntime {
           return "";
         }
 
+        function detectRegion(node: Element): "main" | "header" | "footer" | "nav" | "aside" | "unknown" {
+          if (node.closest("main, [role='main']")) {
+            return "main";
+          }
+          if (node.closest("header")) {
+            return "header";
+          }
+          if (node.closest("nav, [role='navigation']")) {
+            return "nav";
+          }
+          if (node.closest("footer")) {
+            return "footer";
+          }
+          if (node.closest("aside")) {
+            return "aside";
+          }
+          return "unknown";
+        }
+
         const selectors: string[] = [];
         if (includeButtons) {
           selectors.push("button", "[role='button']", "input[type='button']", "input[type='submit']");
@@ -211,6 +277,9 @@ export class BrowserRuntime {
           const text = deriveText(node).slice(0, 160);
           const inputType = node instanceof HTMLInputElement ? (node.type ?? "").toLowerCase() : "";
           const name = typeof html.name === "string" ? html.name : "";
+          const domId = typeof (node as HTMLElement).id === "string" ? (node as HTMLElement).id : "";
+          const rawHref = node instanceof HTMLAnchorElement ? (node.getAttribute("href") ?? "") : "";
+          const region = detectRegion(node);
 
           return {
             id,
@@ -220,10 +289,13 @@ export class BrowserRuntime {
             placeholder: html.placeholder ?? "",
             ariaLabel: node.getAttribute("aria-label") ?? "",
             href: (node as HTMLAnchorElement).href ?? "",
+            rawHref,
             value: html.value ?? "",
             disabled: Boolean((node as HTMLButtonElement).disabled),
             inputType,
             name,
+            domId,
+            region,
             inViewport: isInViewport(node, viewportMarginPx),
             selector: toSelector(node)
           };
@@ -245,7 +317,21 @@ export class BrowserRuntime {
 
     this.elementMap.clear();
     for (const item of typedPayload.elements) {
-      this.elementMap.set(item.id, { id: item.id, selector: item.selector });
+      this.elementMap.set(item.id, {
+        id: item.id,
+        selector: item.selector,
+        tag: item.tag,
+        role: item.role,
+        text: item.text,
+        placeholder: item.placeholder,
+        ariaLabel: item.ariaLabel,
+        href: item.href,
+        rawHref: item.rawHref,
+        inputType: item.inputType,
+        name: item.name,
+        domId: item.domId,
+        region: item.region
+      });
     }
 
     return {
@@ -271,13 +357,13 @@ export class BrowserRuntime {
       }
       case "click": {
         const elementId = String(args.elementId ?? "").trim();
-        const selector = this.resolveSelector(elementId);
-        const locator = page.locator(selector).first();
+        const element = this.resolveElement(elementId);
+        const locator = await this.resolveLocator(page, element);
         try {
           await locator.click({ timeout: this.config.actionTimeoutMs });
         } catch (error) {
           if (this.config.clickFallbackToHrefOnTimeout && this.isNavigationTimeout(error)) {
-            const fallbackHref = await this.resolveHrefFromLocator(page, locator);
+            const fallbackHref = (await this.resolveHrefFromLocator(page, locator)) ?? (element.href || null);
             if (fallbackHref) {
               const message = await this.openUrlWithTolerance(page, fallbackHref);
               await page.waitForTimeout(this.config.waitAfterActionMs);
@@ -296,8 +382,8 @@ export class BrowserRuntime {
         const elementId = String(args.elementId ?? "").trim();
         const text = String(args.text ?? "");
         const clear = args.clear !== false;
-        const selector = this.resolveSelector(elementId);
-        const locator = page.locator(selector).first();
+        const element = this.resolveElement(elementId);
+        const locator = await this.resolveLocator(page, element);
         const meta = await locator.evaluate((element) => {
           const html = element as HTMLInputElement;
           const tag = element.tagName.toLowerCase();
@@ -353,12 +439,93 @@ export class BrowserRuntime {
     }
   }
 
-  private resolveSelector(elementId: string): string {
-    const element = this.elementMap.get(elementId);
-    if (!element) {
-      throw new Error(`Unknown elementId: ${elementId}. Request a new snapshot first.`);
+  private resolveElement(elementIdOrDomId: string): InternalElement {
+    const direct = this.elementMap.get(elementIdOrDomId);
+    if (direct) {
+      return direct;
     }
-    return element.selector;
+
+    for (const element of this.elementMap.values()) {
+      if (element.domId && element.domId === elementIdOrDomId) {
+        return element;
+      }
+    }
+
+    const knownElementIds = Array.from(this.elementMap.keys()).slice(0, 20);
+    throw new Error(
+      `Unknown elementId: ${elementIdOrDomId}. Request a new snapshot first. Known ids: ${knownElementIds.join(", ")}`
+    );
+  }
+
+  private async resolveLocator(page: Page, element: InternalElement): Promise<Locator> {
+    const candidates = this.buildLocatorCandidates(element);
+    for (const selector of candidates) {
+      if (!selector) {
+        continue;
+      }
+
+      try {
+        const locator = page.locator(selector).first();
+        const count = await locator.count();
+        if (count > 0) {
+          return locator;
+        }
+      } catch {
+        // Ignore invalid selector and continue fallback chain.
+      }
+    }
+
+    return page.locator(element.selector).first();
+  }
+
+  private buildLocatorCandidates(element: InternalElement): string[] {
+    const selectors: string[] = [];
+
+    if (element.domId) {
+      selectors.push(`[id="${this.escapeCssAttrValue(element.domId)}"]`);
+    }
+
+    if (element.tag === "a") {
+      if (element.rawHref) {
+        selectors.push(`a[href="${this.escapeCssAttrValue(element.rawHref)}"]`);
+      }
+      if (element.href) {
+        selectors.push(`a[href="${this.escapeCssAttrValue(element.href)}"]`);
+      }
+      if (element.text) {
+        selectors.push(`a:has-text("${this.escapeHasTextValue(element.text)}")`);
+      }
+    }
+
+    if (element.tag === "input") {
+      if (element.name && element.inputType) {
+        selectors.push(
+          `input[name="${this.escapeCssAttrValue(element.name)}"][type="${this.escapeCssAttrValue(element.inputType)}"]`
+        );
+      }
+      if (element.name) {
+        selectors.push(`input[name="${this.escapeCssAttrValue(element.name)}"]`);
+      }
+    }
+
+    if (element.placeholder) {
+      selectors.push(`${element.tag}[placeholder="${this.escapeCssAttrValue(element.placeholder)}"]`);
+    }
+
+    if (element.ariaLabel) {
+      selectors.push(`${element.tag}[aria-label="${this.escapeCssAttrValue(element.ariaLabel)}"]`);
+    }
+
+    selectors.push(element.selector);
+    return selectors;
+  }
+
+  private escapeCssAttrValue(value: string): string {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  private escapeHasTextValue(value: string): string {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
   private applyPageTimeouts(target: Page): void {

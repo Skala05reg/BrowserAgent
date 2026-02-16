@@ -1,5 +1,63 @@
 # CONTEXT
 
+## 2026-02-17 — Анализ последнего run (18 шагов) + fixes против oscillation
+
+### Что было в логе (run от `2026-02-16T22:48:11.363Z`)
+- 18 шагов, процесс оборван пользователем (`Ctrl-C`), штатного `finish` не было.
+- Действия: `navigate x4`, `click x13`, `type x1`.
+- Наблюдалась oscillation-петля между страницами `hh.ru main` и `applicant/resumes`.
+- Ошибка шага 16: `Unknown elementId: a11y-search-input` (модель передала `domId`, а runtime ждал только `e-*`).
+- В шагах присутствовали нелогичные клики по элементам из header и кнопке поднятия резюме вместо прогресса по задаче.
+
+### Корневые причины
+1. Runtime не умел резолвить `domId` и использовал хрупкий селектор как основной путь.
+2. Контекст недостаточно различал main-контент и навигационный шум header/footer/nav.
+3. Не было guard для oscillation между двумя URL (свич туда-сюда без прогресса).
+
+### Что реализовано
+1. Snapshot/DOM метаданные расширены:
+- `domId`, `region`, `rawHref` добавлены в элемент.
+
+2. Browser runtime locator strategy усилена:
+- `click/type` теперь принимают и `e-*`, и `domId`;
+- многоступенчатый resolver локатора:
+  - `[id=...]`
+  - `a[href=...]`
+  - `input[name=...][type=...]`
+  - `placeholder/aria`
+  - fallback на структурный selector.
+
+3. Orchestrator guard-пакет расширен:
+- нормализация reference: если модель дала `domId`, он мапится на `e-*`;
+- для `type` с неизвестным target — fallback на лучший доступный text-editable элемент;
+- oscillation guard:
+  - детект чередования URL в последних шагах;
+  - если новое действие ведет в ту же oscillation-зону, шаг переписывается в `navigate` по breakout-ссылке (приоритет main-контента).
+
+4. Context scoring улучшен:
+- добавлены штрафы:
+  - `nonMainRegionPenalty` (header/footer/nav),
+  - `repeatedRecentUsePenalty`,
+  - `recentlyFailedPenalty`;
+- снижен бонус `recentlyUsedBonus`.
+
+5. Prompt policy усилена:
+- прямое требование использовать `e-*`/`domId` из snapshot и избегать циклов через header/footer/nav при oscillation.
+
+### Измененные файлы
+- `src/browser/browserRuntime.ts`
+- `src/core/orchestrator.ts`
+- `src/context/contextEngine.ts`
+- `src/core/types.ts`
+- `src/model/openaiCompatibleClient.ts`
+- `src/model/anthropicCompatibleClient.ts`
+- `src/config/types.ts`
+- `src/config/loadConfig.ts`
+- `config/default.json`
+- `tests/unit/contextEngine.test.ts`
+- `tests/unit/orchestrator.smoke.test.ts`
+- `README.md`
+
 ## 2026-02-17 — Вернули compact reasoning в консоль без шума
 
 ### Задача

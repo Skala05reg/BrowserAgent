@@ -138,6 +138,9 @@ export interface ContextScoreWeights {
   hrefMatch: number;
   interactiveRoleBonus: number;
   recentlyUsedBonus: number;
+  repeatedRecentUsePenalty: number;
+  recentlyFailedPenalty: number;
+  nonMainRegionPenalty: number;
   disabledPenalty: number;
   nonTextInputPenalty: number;
   lowSignalElementPenalty: number;

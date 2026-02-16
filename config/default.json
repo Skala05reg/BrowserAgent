@@ -162,7 +162,7 @@
   "prompts": {
     "system": "Ты личный автономный браузерный агент. Выбирай только следующий лучший шаг, учитывая текущее состояние страницы и цель. Не выдумывай результаты действий. Если есть неопределенность, сначала собери больше наблюдений или задай вопрос пользователю. Не выполняй потенциально деструктивные, финансовые или отправляющие действия без явной пометки риска.",
     "outputSchemaHint": "Верни только JSON без markdown и без дополнительных комментариев.",
-    "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot. Для type выбирай только текстовые поля (inputType: text/search/email/password/tel/url/number, textarea, contenteditable). Никогда не делай type в checkbox/radio/button/input без текстового назначения. Не повторяй один и тот же action+args больше двух шагов подряд, если URL не меняется. Если click не дал переход, а у элемента есть href, пробуй navigate на этот href. Для wait передавай args.ms в миллисекундах."
+    "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot (формат e-N) или domId из snapshot, но не выдумывай новые идентификаторы. Для type выбирай только текстовые поля (inputType: text/search/email/password/tel/url/number, textarea, contenteditable). Никогда не делай type в checkbox/radio/button/input без текстового назначения. Не повторяй один и тот же action+args больше двух шагов подряд, если URL не меняется. Если click не дал переход, а у элемента есть href, пробуй navigate на этот href. При признаках зацикливания избегай элементов region=header/footer/nav и выбирай следующий шаг из main-контента. Для wait передавай args.ms в миллисекундах."
   },
   "context": {
     "maxRankedElements": 14,
@@ -214,7 +214,10 @@
       "placeholderMatch": 2,
       "hrefMatch": 1,
       "interactiveRoleBonus": 1,
-      "recentlyUsedBonus": 0.5,
+      "recentlyUsedBonus": 0.2,
+      "repeatedRecentUsePenalty": -0.9,
+      "recentlyFailedPenalty": -1.5,
+      "nonMainRegionPenalty": -1.2,
       "disabledPenalty": -2,
       "nonTextInputPenalty": -2.5,
       "lowSignalElementPenalty": -0.8

@@ -135,6 +135,9 @@ function createRuntimeConfig(): RuntimeConfig {
         hrefMatch: 1,
         interactiveRoleBonus: 1,
         recentlyUsedBonus: 1,
+        repeatedRecentUsePenalty: -0.5,
+        recentlyFailedPenalty: -1,
+        nonMainRegionPenalty: -1,
         disabledPenalty: -2,
         nonTextInputPenalty: -2,
         lowSignalElementPenalty: -0.5

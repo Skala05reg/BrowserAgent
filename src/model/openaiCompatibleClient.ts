@@ -93,9 +93,12 @@ export class OpenAICompatibleModelClient implements ModelClient {
       placeholder: item.placeholder,
       ariaLabel: item.ariaLabel,
       href: item.href,
+      rawHref: item.rawHref ?? "",
       disabled: item.disabled,
       inputType: item.inputType ?? "",
       name: item.name ?? "",
+      domId: item.domId ?? "",
+      region: item.region ?? "unknown",
       inViewport: item.inViewport ?? true,
       score: item.score,
       reasons: item.reasons

@@ -33,10 +33,13 @@ export interface PageElementDescriptor {
   placeholder: string;
   ariaLabel: string;
   href: string;
+  rawHref?: string;
   value: string;
   disabled: boolean;
   inputType?: string;
   name?: string;
+  domId?: string;
+  region?: "main" | "header" | "footer" | "nav" | "aside" | "unknown";
   inViewport?: boolean;
 }
 

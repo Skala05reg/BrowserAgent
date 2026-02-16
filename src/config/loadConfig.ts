@@ -134,6 +134,9 @@ const runtimeSchema = z.object({
       hrefMatch: z.number(),
       interactiveRoleBonus: z.number(),
       recentlyUsedBonus: z.number(),
+      repeatedRecentUsePenalty: z.number(),
+      recentlyFailedPenalty: z.number(),
+      nonMainRegionPenalty: z.number(),
       disabledPenalty: z.number(),
       nonTextInputPenalty: z.number(),
       lowSignalElementPenalty: z.number()

@@ -4,7 +4,7 @@ import { ConsoleLogger } from "../telemetry/consoleLogger.js";
 import { BrowserRuntime } from "../browser/browserRuntime.js";
 import { ToolRegistry } from "../tools/toolRegistry.js";
 import { ModelGateway } from "../model/modelGateway.js";
-import { ContextEngine } from "../context/contextEngine.js";
+import { ContextEngine, ContextPacket } from "../context/contextEngine.js";
 import { SubAgentRouter } from "./subAgentRouter.js";
 import { RecoveryManager } from "./recoveryManager.js";
 import { ApprovalGate } from "./approvalGate.js";
@@ -136,7 +136,7 @@ export class AgentOrchestrator {
         );
 
         let decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
-        decision = this.applyActionGuards(decision, snapshot, step);
+        decision = this.applyActionGuards(decision, snapshot, contextPacket, step);
 
         this.logger.decision(
           `STEP ${step}: решение агента`,
@@ -466,15 +466,17 @@ export class AgentOrchestrator {
     });
   }
 
-  private applyActionGuards(decision: AgentDecision, snapshot: PageSnapshot, step: number): AgentDecision {
+  private applyActionGuards(decision: AgentDecision, snapshot: PageSnapshot, contextPacket: ContextPacket, step: number): AgentDecision {
     let guarded = this.normalizeWaitAction(decision);
     if (!this.config.agent.guards.enabled) {
       return guarded;
     }
 
+    guarded = this.normalizeActionElementReference(guarded, snapshot, contextPacket, step);
+
     if (guarded.action.name === "type") {
       const elementId = String(guarded.action.args.elementId ?? "").trim();
-      const target = this.findElementById(snapshot, elementId);
+      const target = this.findElementByRef(snapshot, elementId);
       if (target && !this.isSnapshotElementTextEditable(target)) {
         this.logger.warn(`STEP ${step}: guard rewrote type -> click`, {
           reason: `element ${elementId} is not text-editable`,
@@ -494,7 +496,7 @@ export class AgentOrchestrator {
     const sameActionStreak = this.countRecentSameActionStreak(guarded.action);
     if (guarded.action.name === "click" && sameActionStreak >= this.config.agent.guards.maxRepeatedActionBeforeRewrite) {
       const elementId = String(guarded.action.args.elementId ?? "").trim();
-      const target = this.findElementById(snapshot, elementId);
+      const target = this.findElementByRef(snapshot, elementId);
       if (target?.href) {
         this.logger.warn(`STEP ${step}: guard rewrote repeated click -> navigate`, {
           streak: sameActionStreak + 1,
@@ -527,6 +529,8 @@ export class AgentOrchestrator {
       };
     }
 
+    guarded = this.applyOscillationGuard(guarded, snapshot, contextPacket, step);
+
     return guarded;
   }
 
@@ -558,14 +562,128 @@ export class AgentOrchestrator {
     };
   }
 
-  private findElementById(snapshot: PageSnapshot, elementId: string): PageSnapshot["elements"][number] | undefined {
-    if (!elementId) {
-      return undefined;
+  private normalizeActionElementReference(
+    decision: AgentDecision,
+    snapshot: PageSnapshot,
+    contextPacket: ContextPacket,
+    step: number
+  ): AgentDecision {
+    if (decision.action.name !== "click" && decision.action.name !== "type") {
+      return decision;
     }
-    return snapshot.elements.find((item) => item.id === elementId);
+
+    const ref = String(decision.action.args.elementId ?? "").trim();
+    if (!ref) {
+      return decision;
+    }
+
+    const target = this.findElementByRef(snapshot, ref);
+    if (target) {
+      if (target.id !== ref) {
+        this.logger.warn(`STEP ${step}: guard remapped element reference`, {
+          from: ref,
+          to: target.id
+        });
+        return {
+          ...decision,
+          action: {
+            ...decision.action,
+            args: {
+              ...decision.action.args,
+              elementId: target.id
+            }
+          }
+        };
+      }
+      return decision;
+    }
+
+    if (decision.action.name === "type") {
+      const fallback = contextPacket.rankedElements.find((item) => this.isSnapshotElementTextEditable(item));
+      if (fallback) {
+        this.logger.warn(`STEP ${step}: guard rewrote unknown type target`, {
+          from: ref,
+          to: fallback.id
+        });
+        return {
+          ...decision,
+          action: {
+            ...decision.action,
+            args: {
+              ...decision.action.args,
+              elementId: fallback.id
+            }
+          }
+        };
+      }
+    }
+
+    return decision;
   }
 
-  private isSnapshotElementTextEditable(element: PageSnapshot["elements"][number]): boolean {
+  private applyOscillationGuard(
+    decision: AgentDecision,
+    snapshot: PageSnapshot,
+    contextPacket: ContextPacket,
+    step: number
+  ): AgentDecision {
+    if (decision.action.name !== "click" && decision.action.name !== "navigate") {
+      return decision;
+    }
+
+    const oscillation = this.detectUrlOscillation(snapshot.url);
+    if (!oscillation.detected) {
+      return decision;
+    }
+
+    const targetUrl = this.extractActionTargetUrl(decision.action, snapshot);
+    if (!targetUrl) {
+      return decision;
+    }
+
+    const normalizedTarget = this.normalizeUrlForLoop(targetUrl);
+    if (!normalizedTarget || !oscillation.urls.has(normalizedTarget)) {
+      return decision;
+    }
+
+    const breakout = this.findBreakoutNavigationTarget(snapshot, contextPacket, oscillation.urls);
+    if (!breakout?.href) {
+      return decision;
+    }
+
+    this.logger.warn(`STEP ${step}: guard rewrote oscillating action -> navigate`, {
+      from: decision.action.name,
+      target: normalizedTarget,
+      to: breakout.href,
+      reason: "URL oscillation detected"
+    });
+
+    return {
+      ...decision,
+      action: {
+        name: "navigate",
+        args: { url: breakout.href }
+      }
+    };
+  }
+
+  private findElementByRef(snapshot: PageSnapshot, elementRef: string): PageSnapshot["elements"][number] | undefined {
+    if (!elementRef) {
+      return undefined;
+    }
+    const byId = snapshot.elements.find((item) => item.id === elementRef);
+    if (byId) {
+      return byId;
+    }
+    return snapshot.elements.find((item) => item.domId && item.domId === elementRef);
+  }
+
+  private isSnapshotElementTextEditable(element: {
+    tag: string;
+    role: string;
+    inputType?: string;
+    disabled: boolean;
+  }): boolean {
     if (element.disabled) {
       return false;
     }
@@ -604,6 +722,99 @@ export class AgentOrchestrator {
     }
 
     return streak;
+  }
+
+  private detectUrlOscillation(currentUrl: string): { detected: boolean; urls: Set<string> } {
+    const windowSize = this.config.context.loopHints.historyWindow;
+    const threshold = this.config.context.loopHints.sameUrlThreshold;
+    const recent = this.history.slice(-windowSize).map((item) => this.normalizeUrlForLoop(item.observedUrl));
+    recent.push(this.normalizeUrlForLoop(currentUrl));
+
+    const normalized = recent.filter((item): item is string => Boolean(item));
+    if (normalized.length < threshold) {
+      return { detected: false, urls: new Set(normalized) };
+    }
+
+    const unique = new Set(normalized);
+    if (unique.size > 2) {
+      return { detected: false, urls: unique };
+    }
+
+    let switches = 0;
+    for (let index = 1; index < normalized.length; index += 1) {
+      if (normalized[index] !== normalized[index - 1]) {
+        switches += 1;
+      }
+    }
+
+    const detected = switches >= Math.floor(normalized.length / 2);
+    return { detected, urls: unique };
+  }
+
+  private extractActionTargetUrl(action: AgentAction, snapshot: PageSnapshot): string | null {
+    if (action.name === "navigate") {
+      const url = String(action.args.url ?? "").trim();
+      return url || null;
+    }
+
+    if (action.name === "click") {
+      const ref = String(action.args.elementId ?? "").trim();
+      const target = this.findElementByRef(snapshot, ref);
+      return target?.href ? String(target.href) : null;
+    }
+
+    return null;
+  }
+
+  private findBreakoutNavigationTarget(
+    snapshot: PageSnapshot,
+    contextPacket: ContextPacket,
+    excludedUrls: Set<string>
+  ): PageSnapshot["elements"][number] | undefined {
+    const byId = new Map(snapshot.elements.map((item) => [item.id, item]));
+    const ordered = contextPacket.rankedElements
+      .map((item) => byId.get(item.id))
+      .filter((item): item is PageSnapshot["elements"][number] => Boolean(item));
+
+    const rest = snapshot.elements.filter((item) => !ordered.some((picked) => picked.id === item.id));
+    const candidates = [...ordered, ...rest];
+
+    const preferred = candidates.find((item) => {
+      if (!item.href || item.disabled) {
+        return false;
+      }
+      const normalized = this.normalizeUrlForLoop(item.href);
+      if (!normalized || excludedUrls.has(normalized)) {
+        return false;
+      }
+      const region = (item.region ?? "unknown").toLowerCase();
+      return region !== "header" && region !== "footer" && region !== "nav";
+    });
+    if (preferred) {
+      return preferred;
+    }
+
+    return candidates.find((item) => {
+      if (!item.href || item.disabled) {
+        return false;
+      }
+      const normalized = this.normalizeUrlForLoop(item.href);
+      return Boolean(normalized && !excludedUrls.has(normalized));
+    });
+  }
+
+  private normalizeUrlForLoop(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    try {
+      const parsed = new URL(trimmed);
+      return `${parsed.origin}${parsed.pathname}`.toLowerCase();
+    } catch {
+      return trimmed.split("#")[0]?.split("?")[0]?.toLowerCase() ?? "";
+    }
   }
 
   private actionSignature(action: AgentAction): string {
