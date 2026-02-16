@@ -31,6 +31,8 @@ export class AgentOrchestrator {
   private readonly recoveryManager: RecoveryManager;
   private consecutiveFailures = 0;
   private pauseReason: "manual" | "ask_user" | "recovery" | null = null;
+  private lastDecisionDigestSignature: string | null = null;
+  private repeatedDecisionDigestCount = 0;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -57,6 +59,8 @@ export class AgentOrchestrator {
     this.history = [];
     this.consecutiveFailures = 0;
     this.pauseReason = null;
+    this.lastDecisionDigestSignature = null;
+    this.repeatedDecisionDigestCount = 0;
     this.pauseController.reset();
 
     this.logger.status("Новая задача принята", { task });
@@ -152,6 +156,7 @@ export class AgentOrchestrator {
             action: decision.action
           }
         );
+        this.logDecisionDigest(step, decision);
 
         if (decision.action.name === "finish") {
           const summary = this.extractFinishSummary(decision.action.args);
@@ -333,6 +338,8 @@ export class AgentOrchestrator {
       this.currentTask = null;
       this.currentStep = 0;
       this.pauseReason = null;
+      this.lastDecisionDigestSignature = null;
+      this.repeatedDecisionDigestCount = 0;
       this.approvalGate.deny();
     }
   }
@@ -413,6 +420,50 @@ export class AgentOrchestrator {
 
     const serializedArgs = JSON.stringify(decision.action.args).toLowerCase();
     return this.config.safety.keywordTriggers.some((keyword) => serializedArgs.includes(keyword.toLowerCase()));
+  }
+
+  private logDecisionDigest(step: number, decision: AgentDecision): void {
+    const digest = this.config.logging.console.decisionDigest;
+    if (!digest.enabled) {
+      return;
+    }
+
+    const signature = `${this.actionSignature(decision.action)}|${decision.successCriteria}`;
+    let repeatCount: number | null = null;
+
+    if (digest.mode === "on_change") {
+      if (this.lastDecisionDigestSignature === signature) {
+        this.repeatedDecisionDigestCount += 1;
+        if (this.repeatedDecisionDigestCount % digest.repeatReminderEvery !== 0) {
+          return;
+        }
+        repeatCount = this.repeatedDecisionDigestCount;
+      } else {
+        this.lastDecisionDigestSignature = signature;
+        this.repeatedDecisionDigestCount = 1;
+      }
+    } else {
+      if (this.lastDecisionDigestSignature === signature) {
+        this.repeatedDecisionDigestCount += 1;
+        repeatCount = this.repeatedDecisionDigestCount;
+      } else {
+        this.lastDecisionDigestSignature = signature;
+        this.repeatedDecisionDigestCount = 1;
+      }
+    }
+
+    const actionLabel = this.formatActionLabel(decision.action);
+    const thought = this.shorten(decision.thoughtSummary, digest.thoughtMaxLength);
+    const why = this.shorten(decision.reasoning, digest.reasoningMaxLength);
+    const target = this.shorten(decision.successCriteria, digest.successCriteriaMaxLength);
+
+    this.logger.status(`STEP ${step}: план и причина`, {
+      action: actionLabel,
+      why,
+      target,
+      thought,
+      ...(repeatCount ? { repeat: repeatCount } : {})
+    });
   }
 
   private applyActionGuards(decision: AgentDecision, snapshot: PageSnapshot, step: number): AgentDecision {
@@ -570,6 +621,55 @@ export class AgentOrchestrator {
 
     const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
     return `{${entries.map(([key, nested]) => `${JSON.stringify(key)}:${this.stableStringify(nested)}`).join(",")}}`;
+  }
+
+  private formatActionLabel(action: AgentAction): string {
+    if (action.name === "navigate") {
+      const url = String(action.args.url ?? "").trim();
+      return url ? `navigate -> ${url}` : "navigate";
+    }
+
+    if (action.name === "click") {
+      const elementId = String(action.args.elementId ?? "").trim();
+      return elementId ? `click ${elementId}` : "click";
+    }
+
+    if (action.name === "type") {
+      const elementId = String(action.args.elementId ?? "").trim();
+      const text = String(action.args.text ?? "");
+      const preview = this.shorten(text.replace(/\s+/g, " ").trim(), 40);
+      return elementId ? `type ${elementId}: "${preview}"` : `type "${preview}"`;
+    }
+
+    if (action.name === "press") {
+      return `press ${String(action.args.key ?? "Enter")}`;
+    }
+
+    if (action.name === "scroll") {
+      const direction = String(action.args.direction ?? "down");
+      const amount = Number(action.args.amount ?? 0);
+      return `scroll ${direction} ${Number.isFinite(amount) ? Math.abs(amount) : "-"}`;
+    }
+
+    if (action.name === "wait") {
+      const raw = action.args.ms ?? action.args.duration ?? 0;
+      const ms = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+      return `wait ${ms}ms`;
+    }
+
+    if (action.name === "ask_user") {
+      return "ask_user";
+    }
+
+    return action.name;
+  }
+
+  private shorten(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
   }
 
   private async sleep(ms: number): Promise<void> {

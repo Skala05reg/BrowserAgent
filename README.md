@@ -51,6 +51,10 @@
    - элементы ограничиваются viewport-областью (по конфигу),
    - в контекст добавляются `inputType`, `name`, `inViewport`,
    - для input извлекается текст label, если у элемента нет собственного текста.
+12. Компактный reasoning в консоли:
+   - отдельный `status`-digest по шагу: `action + why + target + thought`,
+   - режим `on_change`, чтобы не спамить одинаковыми решениями,
+   - напоминание о повторяющемся плане через заданный интервал.
 
 ## Быстрый старт
 
@@ -93,6 +97,12 @@ npm test
 - `console.maxInlineLineLength`
 - `console.neverTruncateKeys`
 - `console.actionStartLogActions`
+- `console.decisionDigest.enabled`
+- `console.decisionDigest.mode`
+- `console.decisionDigest.repeatReminderEvery`
+- `console.decisionDigest.thoughtMaxLength`
+- `console.decisionDigest.reasoningMaxLength`
+- `console.decisionDigest.successCriteriaMaxLength`
 
 Анти-циклические guard-параметры:
 - `agent.guards.enabled`

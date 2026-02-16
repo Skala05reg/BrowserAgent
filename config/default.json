@@ -126,7 +126,15 @@
         "text",
         "result"
       ],
-      "actionStartLogActions": []
+      "actionStartLogActions": [],
+      "decisionDigest": {
+        "enabled": true,
+        "mode": "on_change",
+        "repeatReminderEvery": 4,
+        "thoughtMaxLength": 150,
+        "reasoningMaxLength": 150,
+        "successCriteriaMaxLength": 130
+      }
     },
     "colors": {
       "system": "cyan",

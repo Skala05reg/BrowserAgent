@@ -1,5 +1,36 @@
 # CONTEXT
 
+## 2026-02-17 — Вернули compact reasoning в консоль без шума
+
+### Задача
+Пользователь попросил вернуть в терминал «мысли»/обоснование выбранного действия, но не перегружать поток логов.
+
+### Что реализовано
+1. Добавлен отдельный console decision digest:
+- сообщение формата: `STEP N: план и причина`;
+- поля: `action`, `why`, `target`, `thought`.
+
+2. Анти-спам логика digest:
+- новый режим `mode=on_change`:
+  - если action+args+successCriteria не меняются, digest не печатается на каждом шаге;
+  - выводится напоминание только каждые `repeatReminderEvery` повторов.
+
+3. Управление длиной текста digest через конфиг:
+- `thoughtMaxLength`
+- `reasoningMaxLength`
+- `successCriteriaMaxLength`
+
+4. Все параметры вынесены в конфиг:
+- `logging.console.decisionDigest.*`
+
+### Измененные файлы
+- `src/core/orchestrator.ts`
+- `src/config/types.ts`
+- `src/config/loadConfig.ts`
+- `config/default.json`
+- `tests/unit/orchestrator.smoke.test.ts`
+- `README.md`
+
 ## 2026-02-17 — HH 60-step Failure Analysis + Anti-Loop Execution Guards
 
 ### Что было проанализировано

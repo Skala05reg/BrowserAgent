@@ -81,7 +81,15 @@ function createRuntimeConfig(): RuntimeConfig {
         maxInlineObjectKeys: 8,
         maxInlineLineLength: 220,
         neverTruncateKeys: ["summary", "question", "resumeHint", "text", "result"],
-        actionStartLogActions: []
+        actionStartLogActions: [],
+        decisionDigest: {
+          enabled: true,
+          mode: "on_change",
+          repeatReminderEvery: 4,
+          thoughtMaxLength: 150,
+          reasoningMaxLength: 150,
+          successCriteriaMaxLength: 130
+        }
       },
       colors: {
         system: "cyan",

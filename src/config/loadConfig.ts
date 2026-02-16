@@ -80,7 +80,15 @@ const runtimeSchema = z.object({
       maxInlineObjectKeys: z.number().int().positive(),
       maxInlineLineLength: z.number().int().positive(),
       neverTruncateKeys: z.array(z.string().min(1)),
-      actionStartLogActions: z.array(z.enum(["navigate", "click", "type", "press", "scroll", "wait", "finish", "ask_user"]))
+      actionStartLogActions: z.array(z.enum(["navigate", "click", "type", "press", "scroll", "wait", "finish", "ask_user"])),
+      decisionDigest: z.object({
+        enabled: z.boolean(),
+        mode: z.enum(["always", "on_change"]),
+        repeatReminderEvery: z.number().int().positive(),
+        thoughtMaxLength: z.number().int().positive(),
+        reasoningMaxLength: z.number().int().positive(),
+        successCriteriaMaxLength: z.number().int().positive()
+      })
     }),
     colors: z.object({
       system: z.string().min(1),

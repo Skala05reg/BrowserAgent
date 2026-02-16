@@ -96,6 +96,16 @@ export interface LoggingConsoleConfig {
   maxInlineLineLength: number;
   neverTruncateKeys: string[];
   actionStartLogActions: ActionLogName[];
+  decisionDigest: DecisionDigestConfig;
+}
+
+export interface DecisionDigestConfig {
+  enabled: boolean;
+  mode: "always" | "on_change";
+  repeatReminderEvery: number;
+  thoughtMaxLength: number;
+  reasoningMaxLength: number;
+  successCriteriaMaxLength: number;
 }
 
 export interface LoggingConfig {
