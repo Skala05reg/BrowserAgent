@@ -4,8 +4,8 @@
 - видимый браузер (`Playwright`, non-headless),
 - pause/resume/stop во время выполнения,
 - safety-confirmation для рискованных шагов,
-- цветные live-логи решений, действий и наблюдений,
-- JSONL-аудит всех шагов.
+- цветные компактные live-логи решений, действий и наблюдений,
+- подробные debug-логи в файл (`txt`) и структурированный аудит в `jsonl`.
 
 ## Что уже реализовано
 
@@ -21,7 +21,10 @@
    - `/help`
    - `/exit`
 3. Механизм подтверждения перед рискованными действиями.
-4. Цветная телеметрия по типам событий и параллельная запись в `logs/agent-events.jsonl`.
+4. Цветная телеметрия по типам событий:
+   - компактный мониторинговый поток в терминале;
+   - подробный debug-поток в `logs/agent-debug.txt`;
+   - структурированный аудит в `logs/agent-events.jsonl`.
 5. Поддержка `persistent session` через `.browser-profile`.
 6. Подключаемый model-gateway:
    - `openai_compatible`
@@ -64,6 +67,19 @@ npm test
 - safety-политики,
 - формат логирования,
 - модельный провайдер.
+
+Логирование:
+- терминал: компактный мониторинг без DOM-«простыней»;
+- `logs/agent-debug.txt`: подробный текстовый debug-трейс с расширенными payload;
+- `logs/agent-events.jsonl`: структурированные события для программного анализа.
+
+Пути и лимиты компактного вывода настраиваются в `logging`:
+- `jsonlPath`
+- `debugTextPath`
+- `console.maxInlineValueLength`
+- `console.maxInlineArrayItems`
+- `console.maxInlineObjectKeys`
+- `console.maxInlineLineLength`
 
 Переменные окружения:
 
@@ -110,7 +126,7 @@ npm run model:check
 - `src/browser/browserRuntime.ts` — Playwright runtime + snapshot страницы.
 - `src/model/*` — модельные адаптеры.
 - `src/tools/toolRegistry.ts` — выполнение действий агента.
-- `src/telemetry/consoleLogger.ts` — цветной логгер + JSONL аудит.
+- `src/telemetry/consoleLogger.ts` — цветной логгер (compact monitor + debug file + JSONL).
 - `config/default.json` — все параметры.
 
 ## Ограничения текущей версии

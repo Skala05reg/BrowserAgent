@@ -1,5 +1,48 @@
 # CONTEXT
 
+## 2026-02-16 — Logging Split: Compact Terminal + Detailed Debug File
+
+### Задача
+Сжать и упростить live-логи в терминале для удобного мониторинга, но сохранить полноценную отладочную информацию в файловом формате для анализа и диагностики.
+
+### Что реализовано
+1. Разделение payload в логгере:
+- `monitorData` — компактный вывод в терминал;
+- `debugData` — подробная запись в файл.
+
+2. Расширен `LoggingConfig`:
+- добавлен `logging.debugTextPath` (по умолчанию `logs/agent-debug.txt`);
+- добавлен блок `logging.console` с лимитами компактного отображения:
+  - `maxInlineValueLength`
+  - `maxInlineArrayItems`
+  - `maxInlineObjectKeys`
+  - `maxInlineLineLength`
+
+3. Переработан `ConsoleLogger` (`src/telemetry/consoleLogger.ts`):
+- терминал теперь показывает одну компактную строку key-value вместо больших JSON-блоков;
+- для каждого события сохраняется:
+  - `logs/agent-events.jsonl` (структурировано),
+  - `logs/agent-debug.txt` (человекочитаемый подробный debug с pretty JSON payload).
+
+4. Переработаны payload в оркестраторе (`src/core/orchestrator.ts`):
+- `observation`:
+  - в терминал: URL, title, число элементов, top preview;
+  - в debug: полный список извлечённых элементов и `textExcerpt` (если включён `showObservationDetails`).
+- `context compression`:
+  - в терминал: `selected/total` + top hints;
+  - в debug: полный набор подсказок и метрик.
+- `decision`:
+  - в терминал: action/risk/confirmation/successCriteria;
+  - в debug: full thought/reasoning/action payload.
+- `action success/failure/recovery`:
+  - в терминал: короткий статус;
+  - в debug: расширенные аргументы и служебные данные.
+
+5. Обновлены конфиг-схема и тестовый runtime config:
+- `src/config/types.ts`
+- `src/config/loadConfig.ts`
+- `tests/unit/orchestrator.smoke.test.ts`
+
 ## 2026-02-16 — Legacy Request Path Restored (Z.AI via Claude Settings)
 
 ### Контекст

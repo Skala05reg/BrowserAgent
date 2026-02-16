@@ -67,8 +67,15 @@
   },
   "logging": {
     "jsonlPath": "logs/agent-events.jsonl",
+    "debugTextPath": "logs/agent-debug.txt",
     "showObservationDetails": true,
     "timeFormat": "iso",
+    "console": {
+      "maxInlineValueLength": 120,
+      "maxInlineArrayItems": 4,
+      "maxInlineObjectKeys": 8,
+      "maxInlineLineLength": 220
+    },
     "colors": {
       "system": "cyan",
       "status": "blue",

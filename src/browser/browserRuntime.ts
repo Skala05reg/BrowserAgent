@@ -75,8 +75,21 @@ export class BrowserRuntime {
   public async getSnapshot(): Promise<PageSnapshot> {
     const page = await this.ensurePage();
 
+    // Ensure page is loaded to avoid "Execution context was destroyed" errors
+    try {
+      await page.waitForLoadState("load", { timeout: 5000 });
+    } catch (e) {
+      // Ignore timeout, we'll try to get snapshot anyway
+    }
+
     const payload = await page.evaluate(
       ({ maxElements, textExcerptLength, includeInputs, includeButtons, includeLinks, includeHeadings }) => {
+        // Fix for tsx/esbuild injecting __name which is not defined in the browser
+        const _anyWin = window as any;
+        if (typeof _anyWin.__name === "undefined") {
+          _anyWin.__name = (f: any) => f;
+        }
+
         function toSelector(element: Element): string {
           const html = element as HTMLElement;
           if (html.id) {

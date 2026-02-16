@@ -66,10 +66,19 @@ export interface LoggingColorConfig {
   error: string;
 }
 
+export interface LoggingConsoleConfig {
+  maxInlineValueLength: number;
+  maxInlineArrayItems: number;
+  maxInlineObjectKeys: number;
+  maxInlineLineLength: number;
+}
+
 export interface LoggingConfig {
   jsonlPath: string;
+  debugTextPath: string;
   showObservationDetails: boolean;
   timeFormat: "iso" | "locale";
+  console: LoggingConsoleConfig;
   colors: LoggingColorConfig;
 }
 

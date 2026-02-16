@@ -53,8 +53,15 @@ function createRuntimeConfig(): RuntimeConfig {
     },
     logging: {
       jsonlPath: "logs/test-events.jsonl",
+      debugTextPath: "logs/test-debug.txt",
       showObservationDetails: false,
       timeFormat: "iso",
+      console: {
+        maxInlineValueLength: 120,
+        maxInlineArrayItems: 4,
+        maxInlineObjectKeys: 8,
+        maxInlineLineLength: 220
+      },
       colors: {
         system: "cyan",
         status: "blue",

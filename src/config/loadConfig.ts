@@ -52,8 +52,15 @@ const runtimeSchema = z.object({
   }),
   logging: z.object({
     jsonlPath: z.string().min(1),
+    debugTextPath: z.string().min(1),
     showObservationDetails: z.boolean(),
     timeFormat: z.enum(["iso", "locale"]),
+    console: z.object({
+      maxInlineValueLength: z.number().int().positive(),
+      maxInlineArrayItems: z.number().int().positive(),
+      maxInlineObjectKeys: z.number().int().positive(),
+      maxInlineLineLength: z.number().int().positive()
+    }),
     colors: z.object({
       system: z.string().min(1),
       status: z.string().min(1),

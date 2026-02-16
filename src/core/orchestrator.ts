@@ -75,35 +75,79 @@ export class AgentOrchestrator {
 
         await this.pauseController.waitIfPaused();
 
-        const snapshot = await this.browserRuntime.getSnapshot();
-        this.logger.observation(`STEP ${step}: наблюдение страницы`, {
+        let snapshot;
+        try {
+          snapshot = await this.browserRuntime.getSnapshot();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes("context was destroyed") || message.includes("navigation")) {
+            this.logger.warn(`STEP ${step}: контекст страницы изменился, пробую снять snapshot снова через 1с...`);
+            await this.sleep(1000);
+            snapshot = await this.browserRuntime.getSnapshot();
+          } else {
+            throw error;
+          }
+        }
+
+        const observationMonitor = {
           url: snapshot.url,
           title: snapshot.title,
-          elements: snapshot.elements.slice(0, 12),
-          textExcerpt: this.config.logging.showObservationDetails ? snapshot.textExcerpt : undefined
-        });
+          elementCount: snapshot.elements.length,
+          topElements: this.buildElementMonitorPreview(snapshot)
+        };
+        const observationDebug: Record<string, unknown> = {
+          url: snapshot.url,
+          title: snapshot.title,
+          elements: snapshot.elements
+        };
+        if (this.config.logging.showObservationDetails) {
+          observationDebug.textExcerpt = snapshot.textExcerpt;
+        }
+        this.logger.observation(`STEP ${step}: наблюдение страницы`, observationMonitor, observationDebug);
 
         const contextPacket = this.contextEngine.build(task, snapshot, this.history);
         const route = this.subAgentRouter.selectRoute(step, task, snapshot, this.history);
-        this.logger.observation(`STEP ${step}: context compression`, {
-          selectedElements: contextPacket.compression.selectedElements,
-          totalElements: contextPacket.compression.totalElements,
-          attentionHints: contextPacket.attentionHints
-        });
-        this.logger.observation(`STEP ${step}: sub-agent route`, {
-          role: route.role,
-          rationale: route.rationale
-        });
+        this.logger.observation(
+          `STEP ${step}: context compression`,
+          {
+            selected: `${contextPacket.compression.selectedElements}/${contextPacket.compression.totalElements}`,
+            hints: contextPacket.attentionHints.slice(0, 2)
+          },
+          {
+            selectedElements: contextPacket.compression.selectedElements,
+            totalElements: contextPacket.compression.totalElements,
+            attentionHints: contextPacket.attentionHints
+          }
+        );
+        this.logger.observation(
+          `STEP ${step}: sub-agent route`,
+          { role: route.role, rationale: route.rationale },
+          {
+            role: route.role,
+            rationale: route.rationale
+          }
+        );
 
         const decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
 
-        this.logger.decision(`STEP ${step}: решение агента`, {
-          thoughtSummary: decision.thoughtSummary,
-          reasoning: decision.reasoning,
-          riskLevel: decision.riskLevel,
-          successCriteria: decision.successCriteria,
-          action: decision.action
-        });
+        this.logger.decision(
+          `STEP ${step}: решение агента`,
+          {
+            action: decision.action.name,
+            args: decision.action.args,
+            riskLevel: decision.riskLevel,
+            requiresConfirmation: decision.requiresConfirmation,
+            successCriteria: decision.successCriteria
+          },
+          {
+            thoughtSummary: decision.thoughtSummary,
+            reasoning: decision.reasoning,
+            riskLevel: decision.riskLevel,
+            requiresConfirmation: decision.requiresConfirmation,
+            successCriteria: decision.successCriteria,
+            action: decision.action
+          }
+        );
 
         if (decision.action.name === "finish") {
           const summary = String(decision.action.args.summary ?? "Задача завершена агентом.");
@@ -162,23 +206,47 @@ export class AgentOrchestrator {
 
           if (result.ok) {
             actionSucceeded = true;
-            this.logger.success(`STEP ${step}: действие выполнено`, {
-              action: decision.action.name,
-              message: result.message,
-              data: result.data
-            });
+            this.logger.success(
+              `STEP ${step}: действие выполнено`,
+              {
+                action: decision.action.name,
+                message: result.message
+              },
+              {
+                action: decision.action.name,
+                args: decision.action.args,
+                message: result.message,
+                data: result.data
+              }
+            );
           } else {
-            this.logger.warn(`STEP ${step}: действие завершилось ошибкой`, {
-              action: decision.action.name,
-              message: result.message
-            });
+            this.logger.warn(
+              `STEP ${step}: действие завершилось ошибкой`,
+              {
+                action: decision.action.name,
+                message: result.message
+              },
+              {
+                action: decision.action.name,
+                args: decision.action.args,
+                message: result.message
+              }
+            );
           }
         } catch (error) {
           resultMessage = error instanceof Error ? error.message : "Unknown tool error";
-          this.logger.error(`STEP ${step}: исключение при выполнении действия`, {
-            action: decision.action.name,
-            error: resultMessage
-          });
+          this.logger.error(
+            `STEP ${step}: исключение при выполнении действия`,
+            {
+              action: decision.action.name,
+              error: resultMessage
+            },
+            {
+              action: decision.action.name,
+              args: decision.action.args,
+              error: resultMessage
+            }
+          );
         }
 
         this.history.push({
@@ -193,11 +261,19 @@ export class AgentOrchestrator {
           this.consecutiveFailures += 1;
           const recovery = this.recoveryManager.buildPlan(decision, resultMessage, this.consecutiveFailures);
 
-          this.logger.warn(`STEP ${step}: запуск recovery-плана`, {
-            consecutiveFailures: this.consecutiveFailures,
-            rationale: recovery.rationale,
-            actions: recovery.actions
-          });
+          this.logger.warn(
+            `STEP ${step}: запуск recovery-плана`,
+            {
+              consecutiveFailures: this.consecutiveFailures,
+              rationale: recovery.rationale,
+              actions: this.buildRecoveryActionNames(recovery.actions)
+            },
+            {
+              consecutiveFailures: this.consecutiveFailures,
+              rationale: recovery.rationale,
+              actions: recovery.actions
+            }
+          );
 
           if (recovery.shouldPause) {
             this.pauseController.pause();
@@ -322,6 +398,17 @@ export class AgentOrchestrator {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private buildElementMonitorPreview(snapshot: Awaited<ReturnType<BrowserRuntime["getSnapshot"]>>): string[] {
+    return snapshot.elements.slice(0, 3).map((element) => {
+      const label = element.text || element.ariaLabel || element.placeholder || element.href || element.id;
+      return `${element.id}:${element.role}:${label}`;
+    });
+  }
+
+  private buildRecoveryActionNames(actions: AgentAction[]): string[] {
+    return actions.map((action) => action.name);
   }
 
   private async executeRecoveryActions(step: number, actions: AgentAction[]): Promise<boolean> {

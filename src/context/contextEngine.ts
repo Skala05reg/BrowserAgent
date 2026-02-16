@@ -112,7 +112,8 @@ export class ContextEngine {
       }
     }
 
-    if (["button", "textbox", "input", "a", "link", "select"].includes(element.role)) {
+    const interactiveRoles = ["button", "textbox", "input", "a", "link", "select", "combobox", "textarea", "searchbox", "search"];
+    if (interactiveRoles.includes(element.role.toLowerCase())) {
       score += this.config.scoreWeights.interactiveRoleBonus;
       reasons.push("interactive-role");
     }
