@@ -20,6 +20,9 @@ export interface AgentHistoryItem {
   step: number;
   decision: AgentDecision;
   actionResult: string;
+  actionSucceeded: boolean;
+  observedUrl: string;
+  observedTitle: string;
 }
 
 export interface PageElementDescriptor {
@@ -32,6 +35,9 @@ export interface PageElementDescriptor {
   href: string;
   value: string;
   disabled: boolean;
+  inputType?: string;
+  name?: string;
+  inViewport?: boolean;
 }
 
 export interface PageSnapshot {

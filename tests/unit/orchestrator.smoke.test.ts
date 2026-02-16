@@ -12,7 +12,15 @@ function createRuntimeConfig(): RuntimeConfig {
       stepDelayMs: 0,
       decisionRetryCount: 0,
       allowModelFallback: true,
-      defaultStartUrl: "https://example.com"
+      defaultStartUrl: "https://example.com",
+      guards: {
+        enabled: true,
+        recentActionWindow: 6,
+        maxRepeatedActionBeforeRewrite: 2,
+        maxRepeatedScrollBeforeHotkey: 4,
+        scrollBreakKeyUp: "Home",
+        scrollBreakKeyDown: "End"
+      }
     },
     browser: {
       headless: true,
@@ -23,6 +31,8 @@ function createRuntimeConfig(): RuntimeConfig {
       navigationWaitUntil: "domcontentloaded",
       actionTimeoutMs: 1000,
       waitAfterActionMs: 0,
+      clickFallbackToHrefOnTimeout: true,
+      typeActionAllowedInputTypes: ["text", "search", "email", "password", "tel", "url", "number"],
       snapshotWaitUntil: "domcontentloaded",
       snapshotWaitTimeoutMs: 500,
       adoptLatestPageOnNewTab: true,
@@ -32,12 +42,15 @@ function createRuntimeConfig(): RuntimeConfig {
         includeInputs: true,
         includeButtons: true,
         includeLinks: true,
-        includeHeadings: true
+        includeHeadings: true,
+        onlyViewportElements: true,
+        viewportMarginPx: 80
       }
     },
     model: {
       provider: "rule_based",
       fallbackProvider: "rule_based",
+      fallbackMode: "non_transient_only",
       apiBaseUrl: "https://example.com/v1",
       apiKeyEnv: "MODEL_API_KEY",
       modelNameEnv: "MODEL_NAME",
@@ -47,6 +60,7 @@ function createRuntimeConfig(): RuntimeConfig {
       temperature: 0,
       maxTokens: 200,
       requestTimeoutMs: 1000,
+      transientErrorKeywords: ["timeout", "rate limit"],
       connectionCheckSystemPrompt: "system",
       connectionCheckUserPrompt: "user",
       connectionCheckMaxTokens: 20
@@ -99,6 +113,13 @@ function createRuntimeConfig(): RuntimeConfig {
       keywordMinLength: 3,
       recentHistoryDepth: 4,
       stopWords: ["and", "the"],
+      nonTextInputTypes: ["checkbox", "radio", "button", "submit"],
+      loopHints: {
+        historyWindow: 6,
+        repeatActionThreshold: 3,
+        sameUrlThreshold: 4,
+        failedActionHintLimit: 2
+      },
       scoreWeights: {
         textMatch: 3,
         ariaMatch: 2,
@@ -106,7 +127,9 @@ function createRuntimeConfig(): RuntimeConfig {
         hrefMatch: 1,
         interactiveRoleBonus: 1,
         recentlyUsedBonus: 1,
-        disabledPenalty: -2
+        disabledPenalty: -2,
+        nonTextInputPenalty: -2,
+        lowSignalElementPenalty: -0.5
       }
     },
     subAgents: {
@@ -275,5 +298,186 @@ describe("AgentOrchestrator smoke", () => {
     expect(result.status).toBe("completed");
     expect(result.summary).toBe("итог из text");
     expect(result.stepsExecuted).toBe(1);
+  });
+
+  it("rewrites type on checkbox to click", async () => {
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    let decideCall = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCall += 1;
+        if (decideCall === 1) {
+          return {
+            thoughtSummary: "type",
+            reasoning: "r",
+            riskLevel: "safe" as const,
+            requiresConfirmation: false,
+            successCriteria: "typed",
+            action: { name: "type" as const, args: { elementId: "e-1", text: "ML" } }
+          };
+        }
+
+        return {
+          thoughtSummary: "done",
+          reasoning: "r",
+          riskLevel: "safe" as const,
+          requiresConfirmation: false,
+          successCriteria: "done",
+          action: { name: "finish" as const, args: { summary: "ok" } }
+        };
+      }
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com",
+        title: "Example",
+        textExcerpt: "test page",
+        elements: [
+          {
+            id: "e-1",
+            tag: "input",
+            role: "input",
+            text: "",
+            placeholder: "",
+            ariaLabel: "",
+            href: "",
+            value: "",
+            disabled: false,
+            inputType: "checkbox"
+          }
+        ]
+      })
+    };
+
+    const executedActions: string[] = [];
+    const tools = {
+      execute: async (action: { name: string }) => {
+        executedActions.push(action.name);
+        return {
+          ok: true,
+          message: `executed ${action.name}`
+        };
+      }
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      createRuntimeConfig(),
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+
+    expect(result.status).toBe("completed");
+    expect(executedActions[0]).toBe("click");
+  });
+
+  it("rewrites repeated click to navigate by href", async () => {
+    const config = createRuntimeConfig();
+    config.agent.guards.maxRepeatedActionBeforeRewrite = 1;
+
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    let decideCall = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCall += 1;
+        if (decideCall <= 2) {
+          return {
+            thoughtSummary: "click",
+            reasoning: "r",
+            riskLevel: "safe" as const,
+            requiresConfirmation: false,
+            successCriteria: "clicked",
+            action: { name: "click" as const, args: { elementId: "e-1" } }
+          };
+        }
+
+        return {
+          thoughtSummary: "done",
+          reasoning: "r",
+          riskLevel: "safe" as const,
+          requiresConfirmation: false,
+          successCriteria: "done",
+          action: { name: "finish" as const, args: { summary: "ok" } }
+        };
+      }
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com/list",
+        title: "List",
+        textExcerpt: "test page",
+        elements: [
+          {
+            id: "e-1",
+            tag: "a",
+            role: "a",
+            text: "Open",
+            placeholder: "",
+            ariaLabel: "",
+            href: "https://example.com/item/1",
+            value: "",
+            disabled: false
+          }
+        ]
+      })
+    };
+
+    const executedActions: string[] = [];
+    const tools = {
+      execute: async (action: { name: string }) => {
+        executedActions.push(action.name);
+        return {
+          ok: true,
+          message: `executed ${action.name}`
+        };
+      }
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      config,
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+
+    expect(result.status).toBe("completed");
+    expect(executedActions[0]).toBe("click");
+    expect(executedActions[1]).toBe("navigate");
   });
 });

@@ -42,6 +42,15 @@
    - авто-восстановление после ошибок (wait/retry/escape/scroll),
    - ограничение по серии неудач,
    - автоматическая безопасная пауза при повторных сбоях.
+10. Анти-циклические guard-механизмы:
+   - защита от `type` в не-текстовые input (checkbox/radio и т.д.),
+   - авто-переписывание повторных `click` в `navigate` по `href`,
+   - разрыв длинных серий одинакового `scroll` через `Home/End`,
+   - нормализация `wait.duration -> wait.ms`.
+11. Улучшенный snapshot:
+   - элементы ограничиваются viewport-областью (по конфигу),
+   - в контекст добавляются `inputType`, `name`, `inViewport`,
+   - для input извлекается текст label, если у элемента нет собственного текста.
 
 ## Быстрый старт
 
@@ -84,6 +93,30 @@ npm test
 - `console.maxInlineLineLength`
 - `console.neverTruncateKeys`
 - `console.actionStartLogActions`
+
+Анти-циклические guard-параметры:
+- `agent.guards.enabled`
+- `agent.guards.recentActionWindow`
+- `agent.guards.maxRepeatedActionBeforeRewrite`
+- `agent.guards.maxRepeatedScrollBeforeHotkey`
+- `agent.guards.scrollBreakKeyUp`
+- `agent.guards.scrollBreakKeyDown`
+
+Browser/runtime устойчивость:
+- `browser.clickFallbackToHrefOnTimeout`
+- `browser.typeActionAllowedInputTypes`
+- `browser.snapshot.onlyViewportElements`
+- `browser.snapshot.viewportMarginPx`
+
+Model fallback поведение:
+- `model.fallbackMode`: `always` / `non_transient_only` / `never`
+- `model.transientErrorKeywords`
+
+Context anti-loop:
+- `context.nonTextInputTypes`
+- `context.loopHints.*`
+- `context.scoreWeights.nonTextInputPenalty`
+- `context.scoreWeights.lowSignalElementPenalty`
 
 Переменные окружения:
 

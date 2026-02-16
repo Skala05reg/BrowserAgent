@@ -5,7 +5,15 @@
     "stepDelayMs": 300,
     "decisionRetryCount": 2,
     "allowModelFallback": true,
-    "defaultStartUrl": "https://www.google.com"
+    "defaultStartUrl": "https://www.google.com",
+    "guards": {
+      "enabled": true,
+      "recentActionWindow": 8,
+      "maxRepeatedActionBeforeRewrite": 2,
+      "maxRepeatedScrollBeforeHotkey": 6,
+      "scrollBreakKeyUp": "Home",
+      "scrollBreakKeyDown": "End"
+    }
   },
   "browser": {
     "headless": false,
@@ -19,6 +27,16 @@
     "navigationWaitUntil": "domcontentloaded",
     "actionTimeoutMs": 15000,
     "waitAfterActionMs": 500,
+    "clickFallbackToHrefOnTimeout": true,
+    "typeActionAllowedInputTypes": [
+      "text",
+      "search",
+      "email",
+      "password",
+      "tel",
+      "url",
+      "number"
+    ],
     "snapshotWaitUntil": "domcontentloaded",
     "snapshotWaitTimeoutMs": 1500,
     "adoptLatestPageOnNewTab": true,
@@ -28,12 +46,15 @@
       "includeInputs": true,
       "includeButtons": true,
       "includeLinks": true,
-      "includeHeadings": true
+      "includeHeadings": true,
+      "onlyViewportElements": true,
+      "viewportMarginPx": 120
     }
   },
   "model": {
     "provider": "anthropic_compatible",
     "fallbackProvider": "rule_based",
+    "fallbackMode": "non_transient_only",
     "apiBaseUrl": "https://api.z.ai/api/anthropic",
     "apiKeyEnv": "MODEL_API_KEY",
     "modelNameEnv": "MODEL_NAME",
@@ -43,6 +64,17 @@
     "temperature": 0.2,
     "maxTokens": 1400,
     "requestTimeoutMs": 45000,
+    "transientErrorKeywords": [
+      "timeout",
+      "temporarily unavailable",
+      "rate limit",
+      "too many requests",
+      "connection",
+      "network",
+      "503",
+      "504",
+      "429"
+    ],
     "connectionCheckSystemPrompt": "You are a healthcheck assistant. Reply with short plain text only.",
     "connectionCheckUserPrompt": "Return exactly: GLM_CONNECTION_OK",
     "connectionCheckMaxTokens": 40
@@ -122,7 +154,7 @@
   "prompts": {
     "system": "Ты личный автономный браузерный агент. Выбирай только следующий лучший шаг, учитывая текущее состояние страницы и цель. Не выдумывай результаты действий. Если есть неопределенность, сначала собери больше наблюдений или задай вопрос пользователю. Не выполняй потенциально деструктивные, финансовые или отправляющие действия без явной пометки риска.",
     "outputSchemaHint": "Верни только JSON без markdown и без дополнительных комментариев.",
-    "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot."
+    "actionPolicy": "Используй один из action.name: navigate, click, type, press, scroll, wait, finish, ask_user. Для click/type всегда используй elementId из snapshot. Для type выбирай только текстовые поля (inputType: text/search/email/password/tel/url/number, textarea, contenteditable). Никогда не делай type в checkbox/radio/button/input без текстового назначения. Не повторяй один и тот же action+args больше двух шагов подряд, если URL не меняется. Если click не дал переход, а у элемента есть href, пробуй navigate на этот href. Для wait передавай args.ms в миллисекундах."
   },
   "context": {
     "maxRankedElements": 14,
@@ -145,6 +177,29 @@
       "this",
       "that"
     ],
+    "nonTextInputTypes": [
+      "checkbox",
+      "radio",
+      "button",
+      "submit",
+      "reset",
+      "file",
+      "range",
+      "color",
+      "date",
+      "datetime-local",
+      "month",
+      "week",
+      "time",
+      "hidden",
+      "image"
+    ],
+    "loopHints": {
+      "historyWindow": 8,
+      "repeatActionThreshold": 3,
+      "sameUrlThreshold": 6,
+      "failedActionHintLimit": 3
+    },
     "scoreWeights": {
       "textMatch": 3,
       "ariaMatch": 2,
@@ -152,7 +207,9 @@
       "hrefMatch": 1,
       "interactiveRoleBonus": 1,
       "recentlyUsedBonus": 0.5,
-      "disabledPenalty": -2
+      "disabledPenalty": -2,
+      "nonTextInputPenalty": -2.5,
+      "lowSignalElementPenalty": -0.8
     }
   },
   "subAgents": {

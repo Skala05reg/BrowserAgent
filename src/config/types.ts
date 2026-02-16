@@ -9,6 +9,16 @@ export interface AgentConfig {
   decisionRetryCount: number;
   allowModelFallback: boolean;
   defaultStartUrl: string;
+  guards: AgentGuardsConfig;
+}
+
+export interface AgentGuardsConfig {
+  enabled: boolean;
+  recentActionWindow: number;
+  maxRepeatedActionBeforeRewrite: number;
+  maxRepeatedScrollBeforeHotkey: number;
+  scrollBreakKeyUp: string;
+  scrollBreakKeyDown: string;
 }
 
 export interface BrowserSnapshotConfig {
@@ -18,6 +28,8 @@ export interface BrowserSnapshotConfig {
   includeButtons: boolean;
   includeLinks: boolean;
   includeHeadings: boolean;
+  onlyViewportElements: boolean;
+  viewportMarginPx: number;
 }
 
 export interface BrowserConfig {
@@ -32,6 +44,8 @@ export interface BrowserConfig {
   navigationWaitUntil: "load" | "domcontentloaded" | "networkidle";
   actionTimeoutMs: number;
   waitAfterActionMs: number;
+  clickFallbackToHrefOnTimeout: boolean;
+  typeActionAllowedInputTypes: string[];
   snapshotWaitUntil: "load" | "domcontentloaded" | "networkidle";
   snapshotWaitTimeoutMs: number;
   adoptLatestPageOnNewTab: boolean;
@@ -41,6 +55,7 @@ export interface BrowserConfig {
 export interface ModelConfig {
   provider: string;
   fallbackProvider: string;
+  fallbackMode: "always" | "non_transient_only" | "never";
   apiBaseUrl: string;
   apiKeyEnv: string;
   modelNameEnv: string;
@@ -50,6 +65,7 @@ export interface ModelConfig {
   temperature: number;
   maxTokens: number;
   requestTimeoutMs: number;
+  transientErrorKeywords: string[];
   connectionCheckSystemPrompt: string;
   connectionCheckUserPrompt: string;
   connectionCheckMaxTokens: number;
@@ -113,6 +129,15 @@ export interface ContextScoreWeights {
   interactiveRoleBonus: number;
   recentlyUsedBonus: number;
   disabledPenalty: number;
+  nonTextInputPenalty: number;
+  lowSignalElementPenalty: number;
+}
+
+export interface ContextLoopHintsConfig {
+  historyWindow: number;
+  repeatActionThreshold: number;
+  sameUrlThreshold: number;
+  failedActionHintLimit: number;
 }
 
 export interface ContextConfig {
@@ -121,6 +146,8 @@ export interface ContextConfig {
   keywordMinLength: number;
   recentHistoryDepth: number;
   stopWords: string[];
+  nonTextInputTypes: string[];
+  loopHints: ContextLoopHintsConfig;
   scoreWeights: ContextScoreWeights;
 }
 

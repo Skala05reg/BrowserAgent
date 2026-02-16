@@ -94,6 +94,9 @@ export class OpenAICompatibleModelClient implements ModelClient {
       ariaLabel: item.ariaLabel,
       href: item.href,
       disabled: item.disabled,
+      inputType: item.inputType ?? "",
+      name: item.name ?? "",
+      inViewport: item.inViewport ?? true,
       score: item.score,
       reasons: item.reasons
     }));
@@ -102,6 +105,9 @@ export class OpenAICompatibleModelClient implements ModelClient {
       step: item.step,
       action: item.decision.action,
       result: item.actionResult,
+      success: item.actionSucceeded,
+      url: item.observedUrl,
+      title: item.observedTitle,
       thoughtSummary: item.decision.thoughtSummary,
       risk: item.decision.riskLevel
     }));

@@ -39,6 +39,10 @@ export class SubAgentRouter {
     }
     const lastResult = normalize(last.actionResult);
 
+    if (!last.actionSucceeded) {
+      return this.makeRoute("navigator", "Предыдущий шаг неуспешен, нужен альтернативный маршрут.");
+    }
+
     if (lastResult.includes("error") || lastResult.includes("exception") || lastResult.includes("unknown")) {
       return this.makeRoute("navigator", "Предыдущий шаг завершился ошибкой, нужен пересмотр маршрута.");
     }

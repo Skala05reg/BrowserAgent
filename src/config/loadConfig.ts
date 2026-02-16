@@ -11,7 +11,15 @@ const runtimeSchema = z.object({
     stepDelayMs: z.number().int().nonnegative(),
     decisionRetryCount: z.number().int().nonnegative(),
     allowModelFallback: z.boolean(),
-    defaultStartUrl: z.string().min(1)
+    defaultStartUrl: z.string().min(1),
+    guards: z.object({
+      enabled: z.boolean(),
+      recentActionWindow: z.number().int().positive(),
+      maxRepeatedActionBeforeRewrite: z.number().int().positive(),
+      maxRepeatedScrollBeforeHotkey: z.number().int().positive(),
+      scrollBreakKeyUp: z.string().min(1),
+      scrollBreakKeyDown: z.string().min(1)
+    })
   }),
   browser: z.object({
     headless: z.boolean(),
@@ -22,6 +30,8 @@ const runtimeSchema = z.object({
     navigationWaitUntil: z.enum(["load", "domcontentloaded", "networkidle"]),
     actionTimeoutMs: z.number().int().positive(),
     waitAfterActionMs: z.number().int().nonnegative(),
+    clickFallbackToHrefOnTimeout: z.boolean(),
+    typeActionAllowedInputTypes: z.array(z.string().min(1)),
     snapshotWaitUntil: z.enum(["load", "domcontentloaded", "networkidle"]),
     snapshotWaitTimeoutMs: z.number().int().positive(),
     adoptLatestPageOnNewTab: z.boolean(),
@@ -31,12 +41,15 @@ const runtimeSchema = z.object({
       includeInputs: z.boolean(),
       includeButtons: z.boolean(),
       includeLinks: z.boolean(),
-      includeHeadings: z.boolean()
+      includeHeadings: z.boolean(),
+      onlyViewportElements: z.boolean(),
+      viewportMarginPx: z.number().int().nonnegative()
     })
   }),
   model: z.object({
     provider: z.string().min(1),
     fallbackProvider: z.string().min(1),
+    fallbackMode: z.enum(["always", "non_transient_only", "never"]),
     apiBaseUrl: z.string().url(),
     apiKeyEnv: z.string().min(1),
     modelNameEnv: z.string().min(1),
@@ -46,6 +59,7 @@ const runtimeSchema = z.object({
     temperature: z.number().min(0).max(2),
     maxTokens: z.number().int().positive(),
     requestTimeoutMs: z.number().int().positive(),
+    transientErrorKeywords: z.array(z.string().min(1)),
     connectionCheckSystemPrompt: z.string().min(1),
     connectionCheckUserPrompt: z.string().min(1),
     connectionCheckMaxTokens: z.number().int().positive()
@@ -98,6 +112,13 @@ const runtimeSchema = z.object({
     keywordMinLength: z.number().int().positive(),
     recentHistoryDepth: z.number().int().positive(),
     stopWords: z.array(z.string().min(1)),
+    nonTextInputTypes: z.array(z.string().min(1)),
+    loopHints: z.object({
+      historyWindow: z.number().int().positive(),
+      repeatActionThreshold: z.number().int().positive(),
+      sameUrlThreshold: z.number().int().positive(),
+      failedActionHintLimit: z.number().int().positive()
+    }),
     scoreWeights: z.object({
       textMatch: z.number(),
       ariaMatch: z.number(),
@@ -105,7 +126,9 @@ const runtimeSchema = z.object({
       hrefMatch: z.number(),
       interactiveRoleBonus: z.number(),
       recentlyUsedBonus: z.number(),
-      disabledPenalty: z.number()
+      disabledPenalty: z.number(),
+      nonTextInputPenalty: z.number(),
+      lowSignalElementPenalty: z.number()
     })
   }),
   subAgents: z.object({

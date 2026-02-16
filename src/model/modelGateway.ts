@@ -103,6 +103,14 @@ function normalizeDecisionRisk(decision: z.infer<typeof decisionSchema>): AgentD
     normalizedArgs = decision.action.args as Record<string, unknown>;
   }
 
+  if (decision.action.name === "wait") {
+    const rawMs = normalizedArgs.ms;
+    const rawDuration = normalizedArgs.duration;
+    if (typeof rawMs !== "number" && typeof rawDuration === "number" && Number.isFinite(rawDuration)) {
+      normalizedArgs.ms = Math.max(0, Math.round(rawDuration <= 60 ? rawDuration * 1000 : rawDuration));
+    }
+  }
+
   return {
     ...decision,
     riskLevel: normalizeRiskLevel(decision.riskLevel),
@@ -127,7 +135,11 @@ export class ModelGateway {
       const decision = await this.primary.decide(input);
       return normalizeDecisionRisk(decisionSchema.parse(decision));
     } catch (error) {
-      if (!this.runtimeConfig.agent.allowModelFallback) {
+      if (!this.runtimeConfig.agent.allowModelFallback || this.runtimeConfig.model.fallbackMode === "never") {
+        throw error;
+      }
+
+      if (this.runtimeConfig.model.fallbackMode === "non_transient_only" && this.isTransientModelError(error)) {
         throw error;
       }
       const fallbackDecision = await this.fallback.decide(input);
@@ -149,6 +161,15 @@ export class ModelGateway {
     }
 
     throw new Error(`Unsupported model provider: ${provider}`);
+  }
+
+  private isTransientModelError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return this.runtimeConfig.model.transientErrorKeywords.some((keyword) => message.includes(keyword.toLowerCase()));
   }
 }
 

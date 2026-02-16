@@ -1,5 +1,5 @@
 import path from "node:path";
-import { chromium, BrowserContext, Page } from "playwright";
+import { chromium, BrowserContext, Locator, Page } from "playwright";
 import { BrowserConfig } from "../config/types.js";
 import { PageSnapshot, ToolExecutionResult } from "../core/types.js";
 
@@ -22,6 +22,9 @@ interface SnapshotPayload {
     href: string;
     value: string;
     disabled: boolean;
+    inputType: string;
+    name: string;
+    inViewport: boolean;
     selector: string;
   }>;
 }
@@ -92,7 +95,16 @@ export class BrowserRuntime {
     }
 
     const payload = await page.evaluate(
-      ({ maxElements, textExcerptLength, includeInputs, includeButtons, includeLinks, includeHeadings }) => {
+      ({
+        maxElements,
+        textExcerptLength,
+        includeInputs,
+        includeButtons,
+        includeLinks,
+        includeHeadings,
+        onlyViewportElements,
+        viewportMarginPx
+      }) => {
         // Fix for tsx/esbuild injecting __name which is not defined in the browser
         const _anyWin = window as any;
         if (typeof _anyWin.__name === "undefined") {
@@ -135,6 +147,44 @@ export class BrowserRuntime {
           return style.visibility !== "hidden" && style.display !== "none";
         }
 
+        function isInViewport(element: Element, margin: number): boolean {
+          const rect = element.getBoundingClientRect();
+          return (
+            rect.bottom >= -margin &&
+            rect.right >= -margin &&
+            rect.top <= window.innerHeight + margin &&
+            rect.left <= window.innerWidth + margin
+          );
+        }
+
+        function normalize(value: string): string {
+          return value.replace(/\s+/g, " ").trim();
+        }
+
+        function deriveText(node: Element): string {
+          const textContent = normalize(node.textContent ?? "");
+          if (textContent) {
+            return textContent;
+          }
+
+          if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
+            const labelText = Array.from(node.labels ?? [])
+              .map((item) => normalize(item.textContent ?? ""))
+              .filter(Boolean)
+              .join(" ");
+            if (labelText) {
+              return labelText;
+            }
+          }
+
+          const title = normalize(node.getAttribute("title") ?? "");
+          if (title) {
+            return title;
+          }
+
+          return "";
+        }
+
         const selectors: string[] = [];
         if (includeButtons) {
           selectors.push("button", "[role='button']", "input[type='button']", "input[type='submit']");
@@ -151,13 +201,16 @@ export class BrowserRuntime {
 
         const nodes: Element[] = Array.from(document.querySelectorAll(selectors.join(",")))
           .filter((item: Element) => isVisible(item))
+          .filter((item: Element) => !onlyViewportElements || isInViewport(item, viewportMarginPx))
           .slice(0, maxElements);
 
         const elements = nodes.map((node, index) => {
           const html = node as HTMLInputElement;
           const id = `e-${index + 1}`;
           const role = node.getAttribute("role") ?? node.tagName.toLowerCase();
-          const text = (node.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+          const text = deriveText(node).slice(0, 160);
+          const inputType = node instanceof HTMLInputElement ? (node.type ?? "").toLowerCase() : "";
+          const name = typeof html.name === "string" ? html.name : "";
 
           return {
             id,
@@ -169,6 +222,9 @@ export class BrowserRuntime {
             href: (node as HTMLAnchorElement).href ?? "",
             value: html.value ?? "",
             disabled: Boolean((node as HTMLButtonElement).disabled),
+            inputType,
+            name,
+            inViewport: isInViewport(node, viewportMarginPx),
             selector: toSelector(node)
           };
         });
@@ -209,29 +265,30 @@ export class BrowserRuntime {
         if (!url) {
           return { ok: false, message: "navigate: empty url" };
         }
-        const beforeUrl = page.url();
-        try {
-          await page.goto(url, {
-            waitUntil: this.config.navigationWaitUntil,
-            timeout: this.config.navigationTimeoutMs
-          });
-        } catch (error) {
-          if (this.isNavigationTimeout(error) && page.url() !== beforeUrl) {
-            await page.waitForTimeout(this.config.waitAfterActionMs);
-            return {
-              ok: true,
-              message: `Opened ${url} (partial load; timeout on ${this.config.navigationWaitUntil})`
-            };
-          }
-          throw error;
-        }
+        const message = await this.openUrlWithTolerance(page, url);
         await page.waitForTimeout(this.config.waitAfterActionMs);
-        return { ok: true, message: `Opened ${url}` };
+        return { ok: true, message };
       }
       case "click": {
         const elementId = String(args.elementId ?? "").trim();
         const selector = this.resolveSelector(elementId);
-        await page.locator(selector).first().click({ timeout: this.config.actionTimeoutMs });
+        const locator = page.locator(selector).first();
+        try {
+          await locator.click({ timeout: this.config.actionTimeoutMs });
+        } catch (error) {
+          if (this.config.clickFallbackToHrefOnTimeout && this.isNavigationTimeout(error)) {
+            const fallbackHref = await this.resolveHrefFromLocator(page, locator);
+            if (fallbackHref) {
+              const message = await this.openUrlWithTolerance(page, fallbackHref);
+              await page.waitForTimeout(this.config.waitAfterActionMs);
+              return {
+                ok: true,
+                message: `Clicked ${elementId} (fallback to href). ${message}`
+              };
+            }
+          }
+          throw error;
+        }
         await page.waitForTimeout(this.config.waitAfterActionMs);
         return { ok: true, message: `Clicked ${elementId}` };
       }
@@ -241,6 +298,29 @@ export class BrowserRuntime {
         const clear = args.clear !== false;
         const selector = this.resolveSelector(elementId);
         const locator = page.locator(selector).first();
+        const meta = await locator.evaluate((element) => {
+          const html = element as HTMLInputElement;
+          const tag = element.tagName.toLowerCase();
+          const role = element.getAttribute("role") ?? tag;
+          const inputType = element instanceof HTMLInputElement ? (element.type ?? "").toLowerCase() : "";
+          const contentEditable = element instanceof HTMLElement ? element.isContentEditable : false;
+
+          return {
+            tag,
+            role: role.toLowerCase(),
+            inputType,
+            disabled: Boolean((html as HTMLButtonElement).disabled),
+            contentEditable
+          };
+        });
+
+        if (!this.isTextEditableElement(meta)) {
+          return {
+            ok: false,
+            message: `type: element ${elementId} is not text-editable (tag=${meta.tag}, type=${meta.inputType || "-"})`
+          };
+        }
+
         await locator.click({ timeout: this.config.actionTimeoutMs });
         if (clear) {
           await locator.fill("");
@@ -264,7 +344,7 @@ export class BrowserRuntime {
         return { ok: true, message: `Scrolled ${direction} ${Math.abs(y)}px` };
       }
       case "wait": {
-        const ms = Number(args.ms ?? this.config.waitAfterActionMs);
+        const ms = this.resolveWaitDurationMs(args);
         await page.waitForTimeout(ms);
         return { ok: true, message: `Waited ${ms}ms` };
       }
@@ -313,6 +393,76 @@ export class BrowserRuntime {
         this.applyPageTimeouts(last);
       }
     }
+  }
+
+  private async openUrlWithTolerance(page: Page, url: string): Promise<string> {
+    const beforeUrl = page.url();
+    try {
+      await page.goto(url, {
+        waitUntil: this.config.navigationWaitUntil,
+        timeout: this.config.navigationTimeoutMs
+      });
+      return `Opened ${url}`;
+    } catch (error) {
+      if (this.isNavigationTimeout(error) && page.url() !== beforeUrl) {
+        return `Opened ${url} (partial load; timeout on ${this.config.navigationWaitUntil})`;
+      }
+      throw error;
+    }
+  }
+
+  private async resolveHrefFromLocator(page: Page, locator: Locator): Promise<string | null> {
+    const href = await locator.getAttribute("href").catch(() => null);
+    if (!href) {
+      return null;
+    }
+
+    try {
+      return new URL(href, page.url()).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private isTextEditableElement(meta: {
+    tag: string;
+    role: string;
+    inputType: string;
+    disabled: boolean;
+    contentEditable: boolean;
+  }): boolean {
+    if (meta.disabled) {
+      return false;
+    }
+
+    if (meta.contentEditable) {
+      return true;
+    }
+
+    if (meta.tag === "textarea") {
+      return true;
+    }
+
+    if (meta.tag === "input") {
+      return this.config.typeActionAllowedInputTypes.includes(meta.inputType || "text");
+    }
+
+    return ["textbox", "searchbox", "combobox"].includes(meta.role);
+  }
+
+  private resolveWaitDurationMs(args: Record<string, unknown>): number {
+    const rawMs = args.ms;
+    if (typeof rawMs === "number" && Number.isFinite(rawMs)) {
+      return Math.max(0, Math.round(rawMs));
+    }
+
+    const duration = args.duration;
+    if (typeof duration === "number" && Number.isFinite(duration)) {
+      const normalized = duration <= 60 ? duration * 1000 : duration;
+      return Math.max(0, Math.round(normalized));
+    }
+
+    return this.config.waitAfterActionMs;
   }
 
   private isNavigationTimeout(error: unknown): boolean {

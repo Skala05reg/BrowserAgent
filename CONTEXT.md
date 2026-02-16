@@ -1,5 +1,67 @@
 # CONTEXT
 
+## 2026-02-17 — HH 60-step Failure Analysis + Anti-Loop Execution Guards
+
+### Что было проанализировано
+Разобран запуск из `logs/agent-events.jsonl`, начавшийся в `2026-02-16T21:41:25.552Z` (задача про отклик на 50 вакансий), закончившийся на лимите 60 шагов.
+
+Ключевые факты по логу:
+- 60 решений, 27 скроллов, 23 клика, 3 попытки `type`, 1 `ask_user`.
+- Повторные ошибки на шагах 18/21/27: `type` в `input[type="checkbox"]` (`Input of type "checkbox" cannot be filled`).
+- Длинный бесполезный цикл: массовые `scroll up 1000` и повторные клики по одним и тем же header-элементам.
+- На шаге 60 повторный `click e-33` (кнопка вакансий) завершался timeout и recovery снова повторял тот же неуспешный клик.
+- Был эпизод fallback в `rule_based` (шаг 23), что привело к `ask_user` посреди сценария.
+
+### Корневые причины
+1. Недостаточно информативный snapshot:
+- отсутствовал `inputType`, из-за чего модель путала текстовое поле и checkbox;
+- выборка элементов была шумной и включала много нерелевантного DOM (header/footer), что усиливало циклы.
+
+2. Отсутствие execution-guard слоя:
+- агент мог многократно выполнять одно и то же действие без автокоррекции тактики.
+
+3. Click-timeout не имел fallback по `href`:
+- при проблемах с локатором агент не пробовал прямую навигацию по ссылке.
+
+4. Fallback модели включался слишком рано:
+- при transient-сбоях primary провайдера происходил уход в `rule_based` и `ask_user`.
+
+### Что реализовано
+1. Расширение snapshot/runtime:
+- добавлены поля элемента: `inputType`, `name`, `inViewport`;
+- добавлено извлечение текста из `label` для form-элементов без текстового контента;
+- добавлен viewport-фильтр снапшотов:
+  - `browser.snapshot.onlyViewportElements`
+  - `browser.snapshot.viewportMarginPx`.
+
+2. Улучшения выполнения browser actions:
+- `type` теперь проверяет text-editable (по `tag/role/inputType`) и возвращает контролируемую ошибку вместо падения;
+- `click` при timeout (если включено) делает fallback: `href -> navigate`;
+- `wait` поддерживает `duration` и нормализует к `ms`.
+
+3. Orchestrator action guards:
+- guard `type -> click` для не-текстовых элементов;
+- guard `click -> navigate(href)` при повторе одного и того же клика;
+- guard для длинных серий одинакового скролла: `scroll -> press(Home/End)`;
+- guard-нормализация `wait.duration -> wait.ms`.
+
+4. Контекст и anti-loop hints:
+- penalize для non-text input и low-signal элементов;
+- в `attentionHints` добавлены:
+  - маркеры антицикла (повтор action, неизменный URL),
+  - сводка недавних ошибок.
+
+5. Fallback модели:
+- добавлен `model.fallbackMode` (`always` / `non_transient_only` / `never`);
+- добавлен `model.transientErrorKeywords`;
+- при `non_transient_only` fallback не используется для transient ошибок (чтобы не проваливаться в `rule_based` на временных сбоях).
+
+6. Prompt policy обновлена в конфиге:
+- явный запрет `type` в non-text input;
+- запрет бесконечных повторов одного `action+args`;
+- рекомендация `click -> navigate(href)`, если click не дал эффекта;
+- требование задавать `wait.ms`.
+
 ## 2026-02-16 — Console Log Signal Cleanup + Finish Output Fix
 
 ### Задача

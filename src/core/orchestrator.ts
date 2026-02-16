@@ -9,7 +9,7 @@ import { SubAgentRouter } from "./subAgentRouter.js";
 import { RecoveryManager } from "./recoveryManager.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { PauseController } from "./pauseController.js";
-import { AgentAction, AgentHistoryItem, AgentTaskResult, PendingApproval } from "./types.js";
+import { AgentAction, AgentDecision, AgentHistoryItem, AgentTaskResult, PageSnapshot, PendingApproval } from "./types.js";
 
 export interface OrchestratorStatus {
   running: boolean;
@@ -131,7 +131,8 @@ export class AgentOrchestrator {
           }
         );
 
-        const decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
+        let decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
+        decision = this.applyActionGuards(decision, snapshot, step);
 
         this.logger.decision(
           `STEP ${step}: решение агента`,
@@ -261,7 +262,10 @@ export class AgentOrchestrator {
         this.history.push({
           step,
           decision,
-          actionResult: resultMessage
+          actionResult: resultMessage,
+          actionSucceeded,
+          observedUrl: snapshot.url,
+          observedTitle: snapshot.title
         });
 
         if (actionSucceeded) {
@@ -409,6 +413,163 @@ export class AgentOrchestrator {
 
     const serializedArgs = JSON.stringify(decision.action.args).toLowerCase();
     return this.config.safety.keywordTriggers.some((keyword) => serializedArgs.includes(keyword.toLowerCase()));
+  }
+
+  private applyActionGuards(decision: AgentDecision, snapshot: PageSnapshot, step: number): AgentDecision {
+    let guarded = this.normalizeWaitAction(decision);
+    if (!this.config.agent.guards.enabled) {
+      return guarded;
+    }
+
+    if (guarded.action.name === "type") {
+      const elementId = String(guarded.action.args.elementId ?? "").trim();
+      const target = this.findElementById(snapshot, elementId);
+      if (target && !this.isSnapshotElementTextEditable(target)) {
+        this.logger.warn(`STEP ${step}: guard rewrote type -> click`, {
+          reason: `element ${elementId} is not text-editable`,
+          tag: target.tag,
+          inputType: target.inputType ?? "-"
+        });
+        guarded = {
+          ...guarded,
+          action: {
+            name: "click",
+            args: { elementId }
+          }
+        };
+      }
+    }
+
+    const sameActionStreak = this.countRecentSameActionStreak(guarded.action);
+    if (guarded.action.name === "click" && sameActionStreak >= this.config.agent.guards.maxRepeatedActionBeforeRewrite) {
+      const elementId = String(guarded.action.args.elementId ?? "").trim();
+      const target = this.findElementById(snapshot, elementId);
+      if (target?.href) {
+        this.logger.warn(`STEP ${step}: guard rewrote repeated click -> navigate`, {
+          streak: sameActionStreak + 1,
+          elementId,
+          href: target.href
+        });
+        guarded = {
+          ...guarded,
+          action: {
+            name: "navigate",
+            args: { url: target.href }
+          }
+        };
+      }
+    }
+
+    if (guarded.action.name === "scroll" && sameActionStreak >= this.config.agent.guards.maxRepeatedScrollBeforeHotkey) {
+      const direction = String(guarded.action.args.direction ?? "down").toLowerCase() === "up" ? "up" : "down";
+      const breakKey = direction === "up" ? this.config.agent.guards.scrollBreakKeyUp : this.config.agent.guards.scrollBreakKeyDown;
+      this.logger.warn(`STEP ${step}: guard rewrote repeated scroll -> press`, {
+        streak: sameActionStreak + 1,
+        breakKey
+      });
+      guarded = {
+        ...guarded,
+        action: {
+          name: "press",
+          args: { key: breakKey }
+        }
+      };
+    }
+
+    return guarded;
+  }
+
+  private normalizeWaitAction(decision: AgentDecision): AgentDecision {
+    if (decision.action.name !== "wait") {
+      return decision;
+    }
+
+    const rawMs = decision.action.args.ms;
+    if (typeof rawMs === "number" && Number.isFinite(rawMs)) {
+      return decision;
+    }
+
+    const rawDuration = decision.action.args.duration;
+    if (typeof rawDuration !== "number" || !Number.isFinite(rawDuration)) {
+      return decision;
+    }
+
+    const ms = Math.max(0, Math.round(rawDuration <= 60 ? rawDuration * 1000 : rawDuration));
+    return {
+      ...decision,
+      action: {
+        ...decision.action,
+        args: {
+          ...decision.action.args,
+          ms
+        }
+      }
+    };
+  }
+
+  private findElementById(snapshot: PageSnapshot, elementId: string): PageSnapshot["elements"][number] | undefined {
+    if (!elementId) {
+      return undefined;
+    }
+    return snapshot.elements.find((item) => item.id === elementId);
+  }
+
+  private isSnapshotElementTextEditable(element: PageSnapshot["elements"][number]): boolean {
+    if (element.disabled) {
+      return false;
+    }
+
+    const tag = element.tag.toLowerCase();
+    const role = element.role.toLowerCase();
+    const inputType = (element.inputType ?? "text").toLowerCase();
+
+    if (tag === "textarea") {
+      return true;
+    }
+
+    if (tag === "input") {
+      return this.config.browser.typeActionAllowedInputTypes.includes(inputType);
+    }
+
+    return ["textbox", "searchbox", "combobox"].includes(role);
+  }
+
+  private countRecentSameActionStreak(action: AgentAction): number {
+    const recent = this.history.slice(-this.config.agent.guards.recentActionWindow);
+    const targetSignature = this.actionSignature(action);
+    let streak = 0;
+
+    for (let index = recent.length - 1; index >= 0; index -= 1) {
+      const item = recent[index];
+      if (!item) {
+        continue;
+      }
+
+      if (this.actionSignature(item.decision.action) !== targetSignature) {
+        break;
+      }
+
+      streak += 1;
+    }
+
+    return streak;
+  }
+
+  private actionSignature(action: AgentAction): string {
+    return `${action.name}:${this.stableStringify(action.args)}`;
+  }
+
+  private stableStringify(value: unknown): string {
+    if (value === null || typeof value !== "object") {
+      return JSON.stringify(value);
+    }
+
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(",")}]`;
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, nested]) => `${JSON.stringify(key)}:${this.stableStringify(nested)}`).join(",")}}`;
   }
 
   private async sleep(ms: number): Promise<void> {
