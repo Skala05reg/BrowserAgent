@@ -77,6 +77,12 @@ function normalizeDecisionRisk(decision: z.infer<typeof decisionSchema>): AgentD
     if (actionName === "wait" && msMatch) {
       recovered.ms = Number(msMatch[1]);
     }
+    if (actionName === "finish") {
+      recovered.summary = raw.trim();
+    }
+    if (actionName === "ask_user") {
+      recovered.question = raw.trim();
+    }
 
     return recovered;
   };

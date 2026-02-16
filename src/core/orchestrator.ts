@@ -59,7 +59,7 @@ export class AgentOrchestrator {
     this.pauseReason = null;
     this.pauseController.reset();
 
-    this.logger.system("Новая задача принята", { task });
+    this.logger.status("Новая задача принята", { task });
 
     try {
       await this.browserRuntime.start();
@@ -153,7 +153,7 @@ export class AgentOrchestrator {
         );
 
         if (decision.action.name === "finish") {
-          const summary = String(decision.action.args.summary ?? "Задача завершена агентом.");
+          const summary = this.extractFinishSummary(decision.action.args);
           this.logger.success("Агент завершил задачу", { summary, step });
           return {
             status: "completed",
@@ -204,9 +204,11 @@ export class AgentOrchestrator {
         let resultMessage = "";
         let actionSucceeded = false;
         try {
-          this.logger.action(`STEP ${step}: выполняю ${decision.action.name}`, {
-            args: decision.action.args
-          });
+          if (this.shouldLogActionStart(decision.action)) {
+            this.logger.action(`STEP ${step}: выполняю ${decision.action.name}`, {
+              args: decision.action.args
+            });
+          }
 
           const result = await this.tools.execute(decision.action);
           resultMessage = result.message;
@@ -425,6 +427,22 @@ export class AgentOrchestrator {
 
   private buildRecoveryActionNames(actions: AgentAction[]): string[] {
     return actions.map((action) => action.name);
+  }
+
+  private shouldLogActionStart(action: AgentAction): boolean {
+    return this.config.logging.console.actionStartLogActions.includes(action.name);
+  }
+
+  private extractFinishSummary(args: Record<string, unknown>): string {
+    const preferredKeys = ["summary", "text", "result", "message"];
+    for (const key of preferredKeys) {
+      const value = args[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return "Задача завершена агентом.";
   }
 
   private async executeRecoveryActions(step: number, actions: AgentAction[]): Promise<boolean> {

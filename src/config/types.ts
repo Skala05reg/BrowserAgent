@@ -1,4 +1,6 @@
 export type RiskLevel = "safe" | "sensitive" | "destructive" | "financial" | "external_send";
+export type ConsoleLogLevel = "system" | "status" | "observation" | "decision" | "action" | "approval" | "success" | "warn" | "error";
+export type ActionLogName = "navigate" | "click" | "type" | "press" | "scroll" | "wait" | "finish" | "ask_user";
 
 export interface AgentConfig {
   maxSteps: number;
@@ -71,10 +73,13 @@ export interface LoggingColorConfig {
 }
 
 export interface LoggingConsoleConfig {
+  visibleLevels: ConsoleLogLevel[];
   maxInlineValueLength: number;
   maxInlineArrayItems: number;
   maxInlineObjectKeys: number;
   maxInlineLineLength: number;
+  neverTruncateKeys: string[];
+  actionStartLogActions: ActionLogName[];
 }
 
 export interface LoggingConfig {

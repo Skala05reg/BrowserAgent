@@ -61,10 +61,13 @@ function createRuntimeConfig(): RuntimeConfig {
       showObservationDetails: false,
       timeFormat: "iso",
       console: {
+        visibleLevels: ["status", "action", "approval", "success", "warn", "error"],
         maxInlineValueLength: 120,
         maxInlineArrayItems: 4,
         maxInlineObjectKeys: 8,
-        maxInlineLineLength: 220
+        maxInlineLineLength: 220,
+        neverTruncateKeys: ["summary", "question", "resumeHint", "text", "result"],
+        actionStartLogActions: []
       },
       colors: {
         system: "cyan",
@@ -211,5 +214,66 @@ describe("AgentOrchestrator smoke", () => {
     expect(result.status).toBe("completed");
     expect(result.summary).toBe("ok");
     expect(result.stepsExecuted).toBe(2);
+  });
+
+  it("uses finish.text as final summary when summary is absent", async () => {
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    const modelGateway = {
+      decide: async () => ({
+        thoughtSummary: "done",
+        reasoning: "r",
+        riskLevel: "safe" as const,
+        requiresConfirmation: false,
+        successCriteria: "done",
+        action: {
+          name: "finish" as const,
+          args: { text: "итог из text" }
+        }
+      })
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com",
+        title: "Example",
+        textExcerpt: "test page",
+        elements: []
+      })
+    };
+
+    const tools = {
+      execute: async () => ({
+        ok: true,
+        message: "ok"
+      })
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      createRuntimeConfig(),
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+
+    expect(result.status).toBe("completed");
+    expect(result.summary).toBe("итог из text");
+    expect(result.stepsExecuted).toBe(1);
   });
 });

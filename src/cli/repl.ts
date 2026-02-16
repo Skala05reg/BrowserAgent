@@ -36,7 +36,7 @@ export class AgentCli {
     });
 
     this.rl.on("close", async () => {
-      this.logger.system("Завершаю работу...");
+      this.logger.status("Завершаю работу...");
       this.orchestrator.stop();
       await this.browserRuntime.stop();
       process.exit(0);
@@ -162,22 +162,22 @@ export class AgentCli {
 
   private printBanner(): void {
     for (const line of this.config.cli.banner) {
-      this.logger.system(line);
+      this.logger.status(line);
     }
   }
 
   private printHelp(): void {
-    this.logger.system("Доступные команды:");
-    this.logger.system("  /run <задача>  - запустить задачу");
-    this.logger.system("  /pause         - поставить агента на паузу");
-    this.logger.system("  /resume        - продолжить работу агента");
-    this.logger.system("  /continue      - алиас для /resume");
-    this.logger.system("  /stop          - остановить текущую задачу");
-    this.logger.system("  /approve       - подтвердить рискованное действие");
-    this.logger.system("  /deny          - отклонить рискованное действие");
-    this.logger.system("  /status        - показать текущее состояние");
-    this.logger.system("  /help          - показать справку");
-    this.logger.system("  /exit          - завершить программу");
-    this.logger.system("  Enter (пустая строка) - продолжить после ask_user/recovery-паузы");
+    this.logger.status("Доступные команды:");
+    this.logger.status("  /run <задача>  - запустить задачу");
+    this.logger.status("  /pause         - поставить агента на паузу");
+    this.logger.status("  /resume        - продолжить работу агента");
+    this.logger.status("  /continue      - алиас для /resume");
+    this.logger.status("  /stop          - остановить текущую задачу");
+    this.logger.status("  /approve       - подтвердить рискованное действие");
+    this.logger.status("  /deny          - отклонить рискованное действие");
+    this.logger.status("  /status        - показать текущее состояние");
+    this.logger.status("  /help          - показать справку");
+    this.logger.status("  /exit          - завершить программу");
+    this.logger.status("  Enter (пустая строка) - продолжить после ask_user/recovery-паузы");
   }
 }

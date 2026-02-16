@@ -60,10 +60,13 @@ const runtimeSchema = z.object({
     showObservationDetails: z.boolean(),
     timeFormat: z.enum(["iso", "locale"]),
     console: z.object({
+      visibleLevels: z.array(z.enum(["system", "status", "observation", "decision", "action", "approval", "success", "warn", "error"])),
       maxInlineValueLength: z.number().int().positive(),
       maxInlineArrayItems: z.number().int().positive(),
       maxInlineObjectKeys: z.number().int().positive(),
-      maxInlineLineLength: z.number().int().positive()
+      maxInlineLineLength: z.number().int().positive(),
+      neverTruncateKeys: z.array(z.string().min(1)),
+      actionStartLogActions: z.array(z.enum(["navigate", "click", "type", "press", "scroll", "wait", "finish", "ask_user"]))
     }),
     colors: z.object({
       system: z.string().min(1),

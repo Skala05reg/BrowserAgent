@@ -75,10 +75,26 @@
     "showObservationDetails": true,
     "timeFormat": "iso",
     "console": {
+      "visibleLevels": [
+        "status",
+        "action",
+        "approval",
+        "success",
+        "warn",
+        "error"
+      ],
       "maxInlineValueLength": 120,
       "maxInlineArrayItems": 4,
       "maxInlineObjectKeys": 8,
-      "maxInlineLineLength": 220
+      "maxInlineLineLength": 220,
+      "neverTruncateKeys": [
+        "summary",
+        "question",
+        "resumeHint",
+        "text",
+        "result"
+      ],
+      "actionStartLogActions": []
     },
     "colors": {
       "system": "cyan",

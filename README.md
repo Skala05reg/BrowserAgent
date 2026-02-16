@@ -4,7 +4,7 @@
 - видимый браузер (`Playwright`, non-headless),
 - pause/resume/stop во время выполнения,
 - safety-confirmation для рискованных шагов,
-- цветные компактные live-логи решений, действий и наблюдений,
+- цветные компактные live-логи для управления агентом в реальном времени,
 - подробные debug-логи в файл (`txt`) и структурированный аудит в `jsonl`.
 
 ## Что уже реализовано
@@ -77,10 +77,13 @@ npm test
 Пути и лимиты компактного вывода настраиваются в `logging`:
 - `jsonlPath`
 - `debugTextPath`
+- `console.visibleLevels`
 - `console.maxInlineValueLength`
 - `console.maxInlineArrayItems`
 - `console.maxInlineObjectKeys`
 - `console.maxInlineLineLength`
+- `console.neverTruncateKeys`
+- `console.actionStartLogActions`
 
 Переменные окружения:
 

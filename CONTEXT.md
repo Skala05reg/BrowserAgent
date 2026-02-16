@@ -1,5 +1,36 @@
 # CONTEXT
 
+## 2026-02-16 — Console Log Signal Cleanup + Finish Output Fix
+
+### Задача
+Сделать консольные логи более операторскими:
+- убрать шумные уровни (`system`, `decision`, `observation`) из терминала;
+- убрать дубли `action`/`success` (оставить `action` только по явному allow-list);
+- не терять и не обрезать итоговые пользовательские ответы на `finish`.
+
+### Что реализовано
+1. Фильтрация уровней в терминале:
+- добавлен `logging.console.visibleLevels`;
+- события скрытых уровней продолжают писаться в `agent-debug.txt` и `agent-events.jsonl`.
+
+2. Управление стартовыми `ACTION`-логами:
+- добавлен `logging.console.actionStartLogActions` (allow-list);
+- по умолчанию список пустой, поэтому дублирующие `ACTION` в консоль не выводятся.
+
+3. Необрезаемые важные поля в консоли:
+- добавлен `logging.console.neverTruncateKeys`;
+- ключи из списка выводятся отдельными строками без сокращения.
+
+4. Исправлен итог `finish`:
+- оркестратор теперь извлекает финальный текст из `summary`, `text`, `result`, `message` (в таком приоритете);
+- устраняется случай, когда модель вернула результат в `args.text`, а пользователю показывался дефолтный summary.
+
+5. Усилен recovery парсинга args из сырого текста модели:
+- для `finish` и `ask_user` добавлено восстановление `summary/question`, если `action.args` пришли строкой.
+
+6. Для видимости подсказок и help без `SYSTEM`:
+- CLI banner/help/close переведены на `STATUS`.
+
 ## 2026-02-16 — Resume UX + Fast Navigation Wait Modes
 
 ### Задачи

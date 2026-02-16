@@ -27,10 +27,12 @@ interface LogRecord {
 export class ConsoleLogger {
   private readonly jsonlPath: string;
   private readonly debugTextPath: string;
+  private readonly visibleLevels: Set<LogLevel>;
 
   public constructor(private readonly config: LoggingConfig) {
     this.jsonlPath = path.resolve(process.cwd(), config.jsonlPath);
     this.debugTextPath = path.resolve(process.cwd(), config.debugTextPath);
+    this.visibleLevels = new Set(config.console.visibleLevels as LogLevel[]);
     fs.mkdirSync(path.dirname(this.jsonlPath), { recursive: true });
     fs.mkdirSync(path.dirname(this.debugTextPath), { recursive: true });
   }
@@ -80,15 +82,20 @@ export class ConsoleLogger {
     const ts = this.config.timeFormat === "locale" ? new Date().toLocaleTimeString() : new Date().toISOString();
     const label = `[${level.toUpperCase()}]`;
     const line = `${ts} ${label} ${message}`;
+    const shouldPrintToConsole = this.visibleLevels.has(level);
 
-    const colored = this.applyColor(level, line);
-    // eslint-disable-next-line no-console
-    console.log(colored);
-
-    if (monitorData && Object.keys(monitorData).length > 0) {
-      const inline = this.formatMonitorData(monitorData);
+    if (shouldPrintToConsole) {
+      const colored = this.applyColor(level, line);
       // eslint-disable-next-line no-console
-      console.log(this.applyColor(level, `  ${inline}`));
+      console.log(colored);
+    }
+
+    if (shouldPrintToConsole && monitorData && Object.keys(monitorData).length > 0) {
+      const lines = this.formatMonitorDataLines(monitorData);
+      for (const item of lines) {
+        // eslint-disable-next-line no-console
+        console.log(this.applyColor(level, `  ${item}`));
+      }
     }
 
     const debugPayload = debugData ?? monitorData;
@@ -125,29 +132,51 @@ export class ConsoleLogger {
     fs.appendFileSync(this.debugTextPath, `${lines.join("\n")}\n`, "utf8");
   }
 
-  private formatMonitorData(data: Record<string, unknown>): string {
+  private formatMonitorDataLines(data: Record<string, unknown>): string[] {
     const entries = Object.entries(data);
     const maxKeys = this.config.console.maxInlineObjectKeys;
     const picked = entries.slice(0, maxKeys);
-    const parts = picked.map(([key, value]) => `${key}=${this.formatInlineValue(value, 0)}`);
-    if (entries.length > maxKeys) {
-      parts.push(`+${entries.length - maxKeys} fields`);
+    const compactParts: string[] = [];
+    const detailLines: string[] = [];
+
+    for (const [key, value] of picked) {
+      if (this.isImportantKey(key)) {
+        detailLines.push(`${key}=${this.formatInlineValue(value, false, 0)}`);
+      } else {
+        compactParts.push(`${key}=${this.formatInlineValue(value, true, 0)}`);
+      }
     }
 
-    return this.truncate(parts.join(" | "), this.config.console.maxInlineLineLength);
+    if (entries.length > maxKeys) {
+      compactParts.push(`+${entries.length - maxKeys} fields`);
+    }
+
+    const lines: string[] = [];
+    if (compactParts.length > 0) {
+      lines.push(this.truncate(compactParts.join(" | "), this.config.console.maxInlineLineLength));
+    }
+    lines.push(...detailLines);
+    return lines;
   }
 
-  private formatInlineValue(value: unknown, depth: number): string {
+  private formatInlineValue(value: unknown, truncateValue: boolean, depth: number): string {
     const maxValueLength = this.config.console.maxInlineValueLength;
     const maxArrayItems = this.config.console.maxInlineArrayItems;
     const maxObjectKeys = this.config.console.maxInlineObjectKeys;
+
+    if (!truncateValue) {
+      if (typeof value === "string") {
+        return this.normalizeInlineString(value);
+      }
+      return this.safeStringify(value, false);
+    }
 
     if (value === null || typeof value === "undefined") {
       return "-";
     }
 
     if (typeof value === "string") {
-      return this.truncate(value.replace(/\s+/g, " ").trim(), maxValueLength);
+      return this.truncate(this.normalizeInlineString(value), maxValueLength);
     }
 
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
@@ -155,7 +184,7 @@ export class ConsoleLogger {
     }
 
     if (Array.isArray(value)) {
-      const head = value.slice(0, maxArrayItems).map((item) => this.formatInlineValue(item, depth + 1));
+      const head = value.slice(0, maxArrayItems).map((item) => this.formatInlineValue(item, true, depth + 1));
       const suffix = value.length > maxArrayItems ? `, +${value.length - maxArrayItems}` : "";
       return this.truncate(`[${head.join(", ")}${suffix}]`, maxValueLength);
     }
@@ -174,7 +203,7 @@ export class ConsoleLogger {
 
       const nested = entries
         .slice(0, maxObjectKeys)
-        .map(([key, nestedValue]) => `${key}:${this.formatInlineValue(nestedValue, depth + 1)}`);
+        .map(([key, nestedValue]) => `${key}:${this.formatInlineValue(nestedValue, true, depth + 1)}`);
       if (entries.length > maxObjectKeys) {
         nested.push(`+${entries.length - maxObjectKeys}`);
       }
@@ -182,6 +211,14 @@ export class ConsoleLogger {
     }
 
     return this.truncate(String(value), maxValueLength);
+  }
+
+  private isImportantKey(key: string): boolean {
+    return this.config.console.neverTruncateKeys.includes(key);
+  }
+
+  private normalizeInlineString(value: string): string {
+    return value.replace(/\s+/g, " ").trim();
   }
 
   private truncate(value: string, maxLength: number): string {
