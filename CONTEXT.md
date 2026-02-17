@@ -1,5 +1,54 @@
 # CONTEXT
 
+## 2026-02-17 — Step-level performance telemetry + analytics enrichment
+
+### Что было найдено
+- `logs:analyze` агрегировал только run-level метрики (`elapsedMs`, `status`, `stepsExecuted`).
+- Для оптимизации скорости не хватало phase-breakdown по шагам: где тратится время (`snapshot`, `decision`, `action`).
+- Эти данные уже частично можно было вычислять вручную, но не было системного логирования и агрегирования.
+
+### Что реализовано
+1. Step-level telemetry в оркестраторе:
+- в каждом шаге измеряются и логируются:
+  - `snapshotMs`
+  - `decisionMs`
+  - `actionMs`
+  - `totalMs`
+  - `outcome`
+- событие пишется как `observation` с сообщением `Метрики шага` и `runId`.
+
+2. Аналитический слой расширен:
+- `src/telemetry/runAnalytics.ts`:
+  - добавлен парсер `Метрики шага`;
+  - в итоговый отчёт добавлен блок `stepTimingsMs`:
+    - `samples`
+    - `snapshotAvg`
+    - `decisionAvg`
+    - `actionAvg`
+    - `totalAvg`
+    - `totalP90`.
+
+3. CLI-инструмент:
+- `src/scripts/analyzeRuns.ts` теперь выводит `stepTimingsMs` в text-mode и JSON-mode.
+
+4. Тесты:
+- обновлён `tests/unit/runAnalytics.test.ts` под новые поля отчёта.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`36/36`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+- `npm run logs:analyze -- --recent 12 --json` — подтвержден вывод `stepTimingsMs`.
+
+### Live-run
+Run: `2026-02-17T05:42:58.313Z` -> `2026-02-17T05:43:05.111Z`, `runId=9d2743e3-94be-4eba-9a23-4ced5bdbf186`
+
+Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Результат:
+- `completed`, `stepsExecuted=2`, `elapsedMs=6797`, `avgStepMs=3399`.
+- В JSONL подтверждены `Метрики шага` для step 1/2 и финальные `Метрики выполнения`.
+
 ## 2026-02-17 — Run analytics CLI (`logs:analyze`) + config-driven analytics defaults
 
 ### Что было найдено

@@ -28,6 +28,24 @@ describe("runAnalytics", () => {
         message: "Метрики выполнения",
         data: { runId: "r3", status: "completed", elapsedMs: 5000, stepsExecuted: 5, avgStepMs: 1000 }
       }),
+      JSON.stringify({
+        ts: "2026-02-17T00:00:20.500Z",
+        level: "observation",
+        message: "Метрики шага",
+        data: { runId: "r2", step: 1, snapshotMs: 100, decisionMs: 200, actionMs: 300, totalMs: 700, outcome: "action_failed" }
+      }),
+      JSON.stringify({
+        ts: "2026-02-17T00:00:21.000Z",
+        level: "observation",
+        message: "Метрики шага",
+        data: { runId: "r3", step: 1, snapshotMs: 120, decisionMs: 220, actionMs: 320, totalMs: 760, outcome: "action_success" }
+      }),
+      JSON.stringify({
+        ts: "2026-02-17T00:00:21.500Z",
+        level: "observation",
+        message: "Метрики шага",
+        data: { runId: "r3", step: 2, snapshotMs: 140, decisionMs: 260, actionMs: 340, totalMs: 820, outcome: "finished" }
+      }),
       ""
     ].join("\n");
 
@@ -46,6 +64,14 @@ describe("runAnalytics", () => {
     expect(report.elapsedMs.p90).toBe(3000);
     expect(report.elapsedMs.max).toBe(5000);
     expect(report.avgStepsExecuted).toBe(4.5);
+    expect(report.stepTimingsMs).toEqual({
+      samples: 3,
+      snapshotAvg: 120,
+      decisionAvg: 227,
+      actionAvg: 320,
+      totalAvg: 760,
+      totalP90: 760
+    });
     expect(report.slowRuns).toBe(1);
     expect(report.topFailureSummaries).toEqual([{ summary: "timeout", count: 1 }]);
     expect(report.recentRunIds).toEqual(["r2", "r3"]);
@@ -73,6 +99,7 @@ describe("runAnalytics", () => {
     expect(report.analyzedRuns).toBe(1);
     expect(report.statusCounts.completed).toBe(1);
     expect(report.statusCounts.failed).toBe(0);
+    expect(report.stepTimingsMs.samples).toBe(0);
     expect(report.topFailureSummaries).toEqual([]);
   });
 });

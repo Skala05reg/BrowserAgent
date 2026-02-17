@@ -103,6 +103,9 @@ function main(): void {
     `elapsedMs=avg:${report.elapsedMs.avg}, p50:${report.elapsedMs.p50}, p90:${report.elapsedMs.p90}, max:${report.elapsedMs.max}\n`
   );
   process.stdout.write(`avgStepsExecuted=${report.avgStepsExecuted}\n`);
+  process.stdout.write(
+    `stepTimingsMs=samples:${report.stepTimingsMs.samples}, snapshotAvg:${report.stepTimingsMs.snapshotAvg}, decisionAvg:${report.stepTimingsMs.decisionAvg}, actionAvg:${report.stepTimingsMs.actionAvg}, totalAvg:${report.stepTimingsMs.totalAvg}, totalP90:${report.stepTimingsMs.totalP90}\n`
+  );
   process.stdout.write(`slowRuns(>=${slowRunMs}ms)=${report.slowRuns}\n`);
 
   if (report.topFailureSummaries.length > 0) {

@@ -73,7 +73,8 @@
    - архивы ограничиваются заданным числом файлов для контроля дискового роста.
 17. Встроенная аналитика run-метрик:
    - CLI-команда `logs:analyze` считает последние run-метрики по JSONL;
-   - выводит status breakdown, latency-перцентили, slow-run count и top failure summaries.
+   - выводит status breakdown, latency-перцентили, slow-run count, top failure summaries;
+   - агрегирует step-level phase timings (`snapshotMs`, `decisionMs`, `actionMs`, `totalMs`).
 
 ## Быстрый старт
 

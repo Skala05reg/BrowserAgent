@@ -78,6 +78,9 @@ export class AgentOrchestrator {
         this.currentStep = step;
         const stepStartedAt = Date.now();
         let stepOutcome = "running";
+        let snapshotMs = 0;
+        let decisionMs = 0;
+        let actionMs = 0;
         const elapsedMs = Date.now() - runStartedAt;
         if (elapsedMs > this.config.agent.maxRunMs) {
           this.logger.warn("Превышен максимальный runtime задачи", {
@@ -86,6 +89,7 @@ export class AgentOrchestrator {
             maxRunMs: this.config.agent.maxRunMs
           });
           stepOutcome = "max_run_timeout";
+          this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
           this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
@@ -101,6 +105,7 @@ export class AgentOrchestrator {
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
           stepOutcome = "stopped";
+          this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
           this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
@@ -117,6 +122,7 @@ export class AgentOrchestrator {
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
           stepOutcome = "stopped_after_pause";
+          this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
           this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
@@ -129,6 +135,7 @@ export class AgentOrchestrator {
           );
         }
 
+        const snapshotStartedAt = Date.now();
         let snapshot;
         try {
           snapshot = await this.browserRuntime.getSnapshot();
@@ -144,6 +151,7 @@ export class AgentOrchestrator {
             throw error;
           }
         }
+        snapshotMs = Date.now() - snapshotStartedAt;
 
         const observationMonitor = {
           url: snapshot.url,
@@ -184,6 +192,7 @@ export class AgentOrchestrator {
           }
         );
 
+        const decisionStartedAt = Date.now();
         let decision = await this.makeDecisionWithRetry(task, step, snapshot, contextPacket, route);
         decision = this.applyActionGuards(decision, snapshot, contextPacket, step);
 
@@ -206,11 +215,13 @@ export class AgentOrchestrator {
           }
         );
         this.logDecisionDigest(step, decision);
+        decisionMs = Date.now() - decisionStartedAt;
 
         if (decision.action.name === "finish") {
           const summary = this.extractFinishSummary(decision.action.args);
           this.logger.success("Агент завершил задачу", { summary, step });
           stepOutcome = "finished";
+          this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
           this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
@@ -233,6 +244,7 @@ export class AgentOrchestrator {
             resumeHint: "После выполнения действия нажми Enter или введи /resume"
           });
           stepOutcome = "ask_user_pause";
+          this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
           this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           continue;
         }
@@ -260,6 +272,7 @@ export class AgentOrchestrator {
               action: decision.action
             });
             stepOutcome = "approval_denied";
+            this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
             this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
             continue;
           }
@@ -268,6 +281,7 @@ export class AgentOrchestrator {
 
         let resultMessage = "";
         let actionSucceeded = false;
+        let actionStartedAt = 0;
         try {
           if (this.shouldLogActionStart(decision.action)) {
             this.logger.action(`STEP ${step}: выполняю ${decision.action.name}`, {
@@ -275,7 +289,9 @@ export class AgentOrchestrator {
             });
           }
 
+          actionStartedAt = Date.now();
           const result = await this.tools.execute(decision.action);
+          actionMs = Date.now() - actionStartedAt;
           resultMessage = result.message;
 
           if (result.ok) {
@@ -308,6 +324,9 @@ export class AgentOrchestrator {
             );
           }
         } catch (error) {
+          if (actionStartedAt > 0) {
+            actionMs = Date.now() - actionStartedAt;
+          }
           resultMessage = error instanceof Error ? error.message : "Unknown tool error";
           this.logger.error(
             `STEP ${step}: исключение при выполнении действия`,
@@ -360,6 +379,7 @@ export class AgentOrchestrator {
               resumeHint: "После проверки нажми Enter или введи /resume"
             });
             stepOutcome = "recovery_pause";
+            this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
             this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
             continue;
           }
@@ -376,6 +396,7 @@ export class AgentOrchestrator {
 
         await this.sleep(this.config.agent.stepDelayMs);
         stepOutcome = actionSucceeded ? "action_success" : "action_failed";
+        this.logStepPhaseMetrics(step, runId, snapshotMs, decisionMs, actionMs, stepStartedAt, stepOutcome);
         this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
       }
 
@@ -1025,6 +1046,27 @@ export class AgentOrchestrator {
     this.logger.warn(`STEP ${step}: медленный шаг`, {
       elapsedMs,
       thresholdMs: this.config.agent.slowStepWarnMs,
+      outcome
+    });
+  }
+
+  private logStepPhaseMetrics(
+    step: number,
+    runId: string,
+    snapshotMs: number,
+    decisionMs: number,
+    actionMs: number,
+    stepStartedAtMs: number,
+    outcome: string
+  ): void {
+    const totalMs = Math.max(0, Date.now() - stepStartedAtMs);
+    this.logger.observation("Метрики шага", {
+      runId,
+      step,
+      snapshotMs: Math.max(0, Math.round(snapshotMs)),
+      decisionMs: Math.max(0, Math.round(decisionMs)),
+      actionMs: Math.max(0, Math.round(actionMs)),
+      totalMs,
       outcome
     });
   }

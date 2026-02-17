@@ -20,6 +20,16 @@ export interface RunOutcomeRecord {
   summary: string;
 }
 
+export interface StepPhaseMetricRecord {
+  runId: string;
+  step: number;
+  snapshotMs: number;
+  decisionMs: number;
+  actionMs: number;
+  totalMs: number;
+  outcome: string;
+}
+
 export interface RunAnalyticsOptions {
   recentRuns: number;
   topFailureReasons: number;
@@ -36,6 +46,14 @@ export interface RunAnalyticsReport {
     max: number;
   };
   avgStepsExecuted: number;
+  stepTimingsMs: {
+    samples: number;
+    snapshotAvg: number;
+    decisionAvg: number;
+    actionAvg: number;
+    totalAvg: number;
+    totalP90: number;
+  };
   slowRuns: number;
   topFailureSummaries: Array<{ summary: string; count: number }>;
   recentRunIds: string[];
@@ -143,10 +161,62 @@ export function extractRunOutcomes(records: EventRecord[]): Map<string, RunOutco
   return outcomes;
 }
 
+export function extractStepPhaseMetricRecords(records: EventRecord[]): StepPhaseMetricRecord[] {
+  const result: StepPhaseMetricRecord[] = [];
+
+  for (const record of records) {
+    if (record.message !== "Метрики шага" || !record.data) {
+      continue;
+    }
+
+    const runId = record.data.runId;
+    const step = record.data.step;
+    const snapshotMs = record.data.snapshotMs;
+    const decisionMs = record.data.decisionMs;
+    const actionMs = record.data.actionMs;
+    const totalMs = record.data.totalMs;
+    const outcome = record.data.outcome;
+
+    if (typeof runId !== "string") {
+      continue;
+    }
+    if (typeof step !== "number" || !Number.isFinite(step) || step <= 0) {
+      continue;
+    }
+    if (typeof snapshotMs !== "number" || !Number.isFinite(snapshotMs) || snapshotMs < 0) {
+      continue;
+    }
+    if (typeof decisionMs !== "number" || !Number.isFinite(decisionMs) || decisionMs < 0) {
+      continue;
+    }
+    if (typeof actionMs !== "number" || !Number.isFinite(actionMs) || actionMs < 0) {
+      continue;
+    }
+    if (typeof totalMs !== "number" || !Number.isFinite(totalMs) || totalMs < 0) {
+      continue;
+    }
+
+    result.push({
+      runId,
+      step: Math.round(step),
+      snapshotMs: Math.round(snapshotMs),
+      decisionMs: Math.round(decisionMs),
+      actionMs: Math.round(actionMs),
+      totalMs: Math.round(totalMs),
+      outcome: typeof outcome === "string" ? outcome : "unknown"
+    });
+  }
+
+  return result;
+}
+
 export function buildRunAnalyticsReport(records: EventRecord[], options: RunAnalyticsOptions): RunAnalyticsReport {
   const extractedMetrics = extractRunMetricRecords(records);
   const recent = extractedMetrics.slice(-options.recentRuns);
+  const recentRunIds = recent.map((item) => item.runId);
+  const recentRunIdSet = new Set(recentRunIds);
   const outcomes = extractRunOutcomes(records);
+  const stepPhaseMetrics = extractStepPhaseMetricRecords(records).filter((item) => recentRunIdSet.has(item.runId));
 
   const statusCounts: Record<RunMetricRecord["status"], number> = {
     completed: 0,
@@ -160,6 +230,10 @@ export function buildRunAnalyticsReport(records: EventRecord[], options: RunAnal
 
   const elapsedValues = recent.map((item) => item.elapsedMs).sort((left, right) => left - right);
   const stepsValues = recent.map((item) => item.stepsExecuted);
+  const snapshotValues = stepPhaseMetrics.map((item) => item.snapshotMs);
+  const decisionValues = stepPhaseMetrics.map((item) => item.decisionMs);
+  const actionValues = stepPhaseMetrics.map((item) => item.actionMs);
+  const totalStepValues = stepPhaseMetrics.map((item) => item.totalMs).sort((left, right) => left - right);
   const failureCounter = new Map<string, number>();
 
   for (const item of recent) {
@@ -186,9 +260,17 @@ export function buildRunAnalyticsReport(records: EventRecord[], options: RunAnal
       max: roundSafe(elapsedValues.at(-1) ?? 0)
     },
     avgStepsExecuted: roundSafe(average(stepsValues), 2),
+    stepTimingsMs: {
+      samples: stepPhaseMetrics.length,
+      snapshotAvg: roundSafe(average(snapshotValues)),
+      decisionAvg: roundSafe(average(decisionValues)),
+      actionAvg: roundSafe(average(actionValues)),
+      totalAvg: roundSafe(average(totalStepValues)),
+      totalP90: roundSafe(percentile(totalStepValues, 0.9))
+    },
     slowRuns: recent.filter((item) => item.elapsedMs >= options.slowRunMs).length,
     topFailureSummaries,
-    recentRunIds: recent.map((item) => item.runId)
+    recentRunIds
   };
 }
 

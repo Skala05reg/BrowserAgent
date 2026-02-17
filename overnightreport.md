@@ -566,3 +566,75 @@
 - Что пока ограничивает:
   - `orchestrator.ts` остаётся крупным и требует модульной декомпозиции;
   - нет полноценного replay/eval/benchmark контура для автоматического сравнения веток/коммитов на одинаковом наборе задач.
+
+---
+
+## 2026-02-17 08:44:15 MSK
+
+### Scope
+- Новый полный проход по репозиторию (`read_files_count=42`).
+- Refactor speed-observability: переход от только run-level к step-level performance telemetry.
+- Валидация тестами, live-run и проверкой JSONL/analytics.
+
+### Что найдено
+- `logs:analyze` уже давал run-level статистику, но не показывал phase-level breakdown внутри шага.
+- Для speed-оптимизаций это слепая зона: непонятно, где узкое место (snapshot/decision/action).
+
+### Что внедрено
+1. **Step-level performance telemetry в orchestrator**
+- На каждом шаге теперь логируется событие `Метрики шага` с полями:
+  - `runId`
+  - `step`
+  - `snapshotMs`
+  - `decisionMs`
+  - `actionMs`
+  - `totalMs`
+  - `outcome`
+
+2. **Аналитика run-логов расширена**
+- `src/telemetry/runAnalytics.ts` теперь парсит `Метрики шага`.
+- В отчете добавлен блок `stepTimingsMs`:
+  - `samples`
+  - `snapshotAvg`
+  - `decisionAvg`
+  - `actionAvg`
+  - `totalAvg`
+  - `totalP90`
+
+3. **CLI вывод enriched-аналитики**
+- `src/scripts/analyzeRuns.ts` теперь печатает `stepTimingsMs` в text/json режимах.
+
+4. **Тесты**
+- Обновлен `tests/unit/runAnalytics.test.ts` под новые поля и расчеты.
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`36/36`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+- `npm run logs:analyze -- --recent 12 --json` -> корректный отчет с `stepTimingsMs`
+
+### Live-run + логи
+- Проверочный run:
+  - задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+  - `runId`: `9d2743e3-94be-4eba-9a23-4ced5bdbf186`
+  - результат: `completed`, `stepsExecuted=2`, `elapsedMs=6797`, `avgStepMs=3399`
+- Подтверждено по `logs/agent-events.jsonl`:
+  - есть две записи `Метрики шага` (step 1 и step 2);
+  - есть финальная `Метрики выполнения`.
+
+### Внешние ориентиры (internet + books)
+- OpenTelemetry Metrics API (official): https://opentelemetry.io/docs/specs/otel/metrics/api/
+- OpenTelemetry SDK Metrics (official): https://opentelemetry.io/docs/specs/otel/metrics/sdk/
+- Google SRE Book (monitoring): https://sre.google/sre-book/
+- OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
+- Accelerate (delivery/perf metrics): https://itrevolution.com/product/accelerate/
+
+### Objective score
+- Обновлённая оценка проекта: **9.5 / 10.0**
+- Что подняло оценку:
+  - появилась step-level наблюдаемость производительности (не только итог run);
+  - `logs:analyze` стал полезен для поиска узких мест и объективного speed-regression контроля;
+  - добавлено тестовое покрытие новых аналитических метрик.
+- Что всё ещё ограничивает:
+  - `orchestrator.ts` остаётся крупным и нуждается в модульной декомпозиции;
+  - пока нет полноценного replay/eval/benchmark контура для автоматического сравнения версии на фиксированном наборе задач.
