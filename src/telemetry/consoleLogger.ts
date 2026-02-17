@@ -25,12 +25,16 @@ interface LogRecord {
   debugData?: Record<string, unknown>;
 }
 
+type LogStreamTarget = "jsonl" | "debug";
+
 export class ConsoleLogger {
   private readonly jsonlPath: string;
   private readonly debugTextPath: string;
   private readonly visibleLevels: Set<LogLevel>;
-  private readonly jsonlStream: WriteStream;
-  private readonly debugTextStream: WriteStream;
+  private jsonlStream: WriteStream;
+  private debugTextStream: WriteStream;
+  private jsonlSizeBytes = 0;
+  private debugTextSizeBytes = 0;
   private readonly redactionKeys: string[];
   private closed = false;
 
@@ -42,16 +46,13 @@ export class ConsoleLogger {
     fs.mkdirSync(path.dirname(this.jsonlPath), { recursive: true });
     fs.mkdirSync(path.dirname(this.debugTextPath), { recursive: true });
 
-    this.jsonlStream = createWriteStream(this.jsonlPath, { flags: "a", encoding: "utf8" });
-    this.debugTextStream = createWriteStream(this.debugTextPath, { flags: "a", encoding: "utf8" });
-    this.jsonlStream.on("error", (error) => {
-      // eslint-disable-next-line no-console
-      console.error(`Logger jsonl stream error: ${error.message}`);
-    });
-    this.debugTextStream.on("error", (error) => {
-      // eslint-disable-next-line no-console
-      console.error(`Logger debug stream error: ${error.message}`);
-    });
+    this.rotateOnStartupIfNeeded(this.jsonlPath);
+    this.rotateOnStartupIfNeeded(this.debugTextPath);
+
+    this.jsonlSizeBytes = this.readFileSize(this.jsonlPath);
+    this.debugTextSizeBytes = this.readFileSize(this.debugTextPath);
+    this.jsonlStream = this.createStream(this.jsonlPath, "jsonl");
+    this.debugTextStream = this.createStream(this.debugTextPath, "debug");
 
     const closeStreams = () => {
       this.close();
@@ -157,7 +158,7 @@ export class ConsoleLogger {
       jsonlRecord.debugData = redactedDebugPayload;
     }
 
-    this.jsonlStream.write(`${this.safeStringify(jsonlRecord, false)}\n`);
+    this.writeToStream("jsonl", `${this.safeStringify(jsonlRecord, false)}\n`);
     this.appendDebugText(record);
   }
 
@@ -178,7 +179,122 @@ export class ConsoleLogger {
     }
 
     lines.push("");
-    this.debugTextStream.write(`${lines.join("\n")}\n`);
+    this.writeToStream("debug", `${lines.join("\n")}\n`);
+  }
+
+  private writeToStream(target: LogStreamTarget, payload: string): void {
+    if (this.closed) {
+      return;
+    }
+
+    const bytes = Buffer.byteLength(payload, "utf8");
+    this.rotateDuringRuntimeIfNeeded(target, bytes);
+
+    if (target === "jsonl") {
+      this.jsonlStream.write(payload);
+      this.jsonlSizeBytes += bytes;
+    } else {
+      this.debugTextStream.write(payload);
+      this.debugTextSizeBytes += bytes;
+    }
+  }
+
+  private rotateOnStartupIfNeeded(filePath: string): void {
+    if (!this.config.rotation.enabled) {
+      return;
+    }
+
+    if (this.config.rotation.maxFileSizeBytes <= 0) {
+      return;
+    }
+
+    const size = this.readFileSize(filePath);
+    if (size < this.config.rotation.maxFileSizeBytes) {
+      return;
+    }
+
+    this.rotateArchives(filePath);
+  }
+
+  private rotateDuringRuntimeIfNeeded(target: LogStreamTarget, incomingBytes: number): void {
+    if (!this.config.rotation.enabled || this.config.rotation.maxFileSizeBytes <= 0) {
+      return;
+    }
+
+    const currentSize = target === "jsonl" ? this.jsonlSizeBytes : this.debugTextSizeBytes;
+    if (currentSize + incomingBytes <= this.config.rotation.maxFileSizeBytes) {
+      return;
+    }
+
+    const filePath = target === "jsonl" ? this.jsonlPath : this.debugTextPath;
+    const previousStream = target === "jsonl" ? this.jsonlStream : this.debugTextStream;
+
+    this.ensureFileExists(filePath);
+    this.rotateArchives(filePath);
+
+    const replacement = this.createStream(filePath, target);
+    if (target === "jsonl") {
+      this.jsonlStream = replacement;
+      this.jsonlSizeBytes = 0;
+    } else {
+      this.debugTextStream = replacement;
+      this.debugTextSizeBytes = 0;
+    }
+
+    previousStream.end();
+  }
+
+  private rotateArchives(basePath: string): void {
+    const maxArchiveFiles = this.config.rotation.maxArchiveFiles;
+    if (maxArchiveFiles <= 0) {
+      if (fs.existsSync(basePath)) {
+        fs.rmSync(basePath, { force: true });
+      }
+      return;
+    }
+
+    for (let index = maxArchiveFiles; index >= 1; index -= 1) {
+      const source = index === 1 ? basePath : `${basePath}.${index - 1}`;
+      const destination = `${basePath}.${index}`;
+
+      if (!fs.existsSync(source)) {
+        continue;
+      }
+
+      if (index === maxArchiveFiles && fs.existsSync(destination)) {
+        fs.rmSync(destination, { force: true });
+      }
+
+      try {
+        fs.renameSync(source, destination);
+      } catch {
+        // Keep logging alive even if rotation fails on a specific file operation.
+      }
+    }
+  }
+
+  private ensureFileExists(filePath: string): void {
+    if (fs.existsSync(filePath)) {
+      return;
+    }
+    fs.closeSync(fs.openSync(filePath, "a"));
+  }
+
+  private readFileSize(filePath: string): number {
+    try {
+      return fs.statSync(filePath).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  private createStream(filePath: string, target: LogStreamTarget): WriteStream {
+    const stream = createWriteStream(filePath, { flags: "a", encoding: "utf8" });
+    stream.on("error", (error) => {
+      // eslint-disable-next-line no-console
+      console.error(`Logger ${target} stream error: ${error.message}`);
+    });
+    return stream;
   }
 
   private formatMonitorDataLines(data: Record<string, unknown>): string[] {

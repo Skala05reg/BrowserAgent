@@ -107,6 +107,11 @@ const runtimeSchema = z.object({
     jsonlIncludeDebugData: z.boolean(),
     showObservationDetails: z.boolean(),
     timeFormat: z.enum(["iso", "locale"]),
+    rotation: z.object({
+      enabled: z.boolean(),
+      maxFileSizeBytes: z.number().int().positive(),
+      maxArchiveFiles: z.number().int().nonnegative()
+    }),
     redaction: z.object({
       enabled: z.boolean(),
       keys: z.array(z.string().min(1)),

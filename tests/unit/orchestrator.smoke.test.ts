@@ -108,6 +108,11 @@ function createRuntimeConfig(): RuntimeConfig {
       jsonlIncludeDebugData: false,
       showObservationDetails: false,
       timeFormat: "iso",
+      rotation: {
+        enabled: true,
+        maxFileSizeBytes: 10_000,
+        maxArchiveFiles: 2
+      },
       redaction: {
         enabled: true,
         keys: ["token", "password", "authorization", "cookie"],

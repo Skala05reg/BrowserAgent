@@ -414,3 +414,74 @@
 - Что пока ограничивает:
   - `orchestrator.ts` остаётся крупным;
   - всё ещё нет полноценного benchmark/eval/replay контура уровня production.
+
+---
+
+## 2026-02-17 08:32:43 MSK
+
+### Scope
+- Полный повторный проход по tracked-файлам (`read_files_count=40`).
+- Рефакторинг подсистемы логирования с фокусом на стабильность, скорость и контроль роста логов.
+- Прогон тестов + два live-run сценария (основной и forced-rotation smoke).
+
+### Что найдено
+- Логи росли без потолка по размеру: `logs/agent-events.jsonl` и `logs/agent-debug.txt` продолжали линейно увеличиваться.
+- Это создает риск деградации I/O на длинных сессиях и накопления дискового мусора.
+- В проекте не было встроенной ротации логов на уровне runtime/config.
+
+### Что внедрено
+1. **Log rotation (config-driven)**
+- Добавлены параметры:
+  - `logging.rotation.enabled`
+  - `logging.rotation.maxFileSizeBytes`
+  - `logging.rotation.maxArchiveFiles`
+- Реализация в `ConsoleLogger`:
+  - startup rotation для oversized файлов при старте;
+  - runtime rotation при превышении лимита;
+  - архивирование с ограничением числа файлов (`.1`, `.2`, ...).
+
+2. **Типы и валидация конфига**
+- Обновлены:
+  - `src/config/types.ts`
+  - `src/config/loadConfig.ts`
+  - `config/default.json`
+- Дефолт: ротация включена, лимит `10MB`, до `5` архивов.
+
+3. **Тесты**
+- Расширен `tests/unit/consoleLogger.test.ts`:
+  - redaction + compact jsonl (существующий);
+  - startup rotation;
+  - runtime rotation.
+- Обновлен `tests/unit/orchestrator.smoke.test.ts` под новый обязательный блок `logging.rotation`.
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`34/34`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+
+### Live-run + лог-проверка
+1. **Основной run**
+- Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+- `runId`: `b503a3e2-564e-4cb4-a1c3-3e7a52ddd494`
+- Результат: `completed`, `stepsExecuted=2`, `elapsedMs=6775`, `avgStepMs=3388`.
+
+2. **Forced-rotation smoke** (отдельный временный конфиг с `maxFileSizeBytes=1500` и отдельными путями)
+- `runId`: `53503356-e297-4e48-8829-273929c68786`
+- Результат: `completed`, `stepsExecuted=2`, `elapsedMs=7473`.
+- В `logs/rotation-smoke/` подтверждено создание архивов и наличие финальных метрик в архивированном JSONL.
+
+### Внешние ориентиры (internet + books)
+- Node.js FS API (`renameSync`, `createWriteStream`): https://nodejs.org/api/fs.html
+- OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
+- AWS Architecture Blog (Exponential Backoff and Jitter): https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+- Release It! (2nd edition): https://pragprog.com/titles/mnee2/release-it-second-edition/
+
+### Objective score
+- Обновлённая оценка проекта: **9.3 / 10.0**
+- Что подняло оценку:
+  - добавлен production-полезный контроль роста логов (rotation by size);
+  - улучшена операционная устойчивость длительных запусков;
+  - усилено тестовое покрытие подсистемы логирования.
+- Что еще ограничивает:
+  - `orchestrator.ts` по-прежнему большой и требует дальнейшей декомпозиции;
+  - нет полноценного benchmark/eval/replay контура для системного сравнения качества между коммитами.

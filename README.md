@@ -68,6 +68,9 @@
 15. Консистентность retry-механик:
    - расчет backoff/jitter вынесен в общий модуль и одинаково используется в decision-retry и recovery;
    - bounded поведение задержек унифицировано между подсистемами.
+16. Ротация логов:
+   - JSONL и debug-log автоматически ротируются по размеру;
+   - архивы ограничиваются заданным числом файлов для контроля дискового роста.
 
 ## Быстрый старт
 
@@ -107,6 +110,9 @@ npm test
 - `debugTextPath`
 - `jsonlIncludeMonitorData`
 - `jsonlIncludeDebugData`
+- `rotation.enabled`
+- `rotation.maxFileSizeBytes`
+- `rotation.maxArchiveFiles`
 - `redaction.enabled`
 - `redaction.keys`
 - `redaction.mask`

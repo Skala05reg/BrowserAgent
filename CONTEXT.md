@@ -1,5 +1,47 @@
 # CONTEXT
 
+## 2026-02-17 — Log rotation by size (JSONL/debug) + storage safety
+
+### Что было найдено
+- Логи росли без верхней границы: в рабочем окружении `logs/agent-events.jsonl` и `logs/agent-debug.txt` уже занимали несколько мегабайт и продолжали расти.
+- Это увеличивает I/O нагрузку и создаёт риск деградации на длинных сессиях.
+
+### Что реализовано
+1. Добавлена конфигурация ротации логов:
+- `logging.rotation.enabled`
+- `logging.rotation.maxFileSizeBytes`
+- `logging.rotation.maxArchiveFiles`
+
+2. Реализация в `ConsoleLogger`:
+- startup-rotation: если файл уже превышает лимит при запуске, он архивируется до открытия stream;
+- runtime-rotation: при достижении лимита запись продолжается в новый активный файл, архивы сдвигаются (`.1`, `.2`, ...);
+- ограничено количество архивов согласно `maxArchiveFiles`.
+
+3. Обновлены типы/схема:
+- `src/config/types.ts`
+- `src/config/loadConfig.ts`
+- `config/default.json` (по умолчанию ротация включена, лимит 10MB, 5 архивов).
+
+4. Тесты:
+- `tests/unit/consoleLogger.test.ts` расширен:
+  - проверка startup rotation;
+  - проверка runtime rotation;
+  - сохранена проверка redaction/compact JSONL.
+- `tests/unit/orchestrator.smoke.test.ts` обновлён под новый обязательный блок `logging.rotation`.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`34/34`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+
+### Live-run проверки
+1. Базовый run с основным конфигом:
+- `runId=b503a3e2-564e-4cb4-a1c3-3e7a52ddd494`, статус `completed`, `stepsExecuted=2`.
+
+2. Отдельный smoke-run с пониженным лимитом ротации (`1500` bytes) на выделенных лог-путях:
+- `runId=53503356-e297-4e48-8829-273929c68786`, статус `completed`, `stepsExecuted=2`.
+- Подтверждено создание архивов в `logs/rotation-smoke/*` и сохранение финальных метрик в архивированном JSONL.
+
 ## 2026-02-17 — Shared backoff utility для orchestrator/recovery
 
 ### Что было найдено

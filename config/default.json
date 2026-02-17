@@ -149,6 +149,11 @@
     "jsonlIncludeDebugData": false,
     "showObservationDetails": true,
     "timeFormat": "iso",
+    "rotation": {
+      "enabled": true,
+      "maxFileSizeBytes": 10485760,
+      "maxArchiveFiles": 5
+    },
     "redaction": {
       "enabled": true,
       "keys": [

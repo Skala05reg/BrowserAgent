@@ -153,9 +153,16 @@ export interface LoggingConfig {
   jsonlIncludeDebugData: boolean;
   showObservationDetails: boolean;
   timeFormat: "iso" | "locale";
+  rotation: LoggingRotationConfig;
   redaction: LoggingRedactionConfig;
   console: LoggingConsoleConfig;
   colors: LoggingColorConfig;
+}
+
+export interface LoggingRotationConfig {
+  enabled: boolean;
+  maxFileSizeBytes: number;
+  maxArchiveFiles: number;
 }
 
 export interface LoggingRedactionConfig {

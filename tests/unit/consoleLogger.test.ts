@@ -13,6 +13,11 @@ function createLoggingConfig(tmpDir: string): LoggingConfig {
     jsonlIncludeDebugData: false,
     showObservationDetails: false,
     timeFormat: "iso",
+    rotation: {
+      enabled: true,
+      maxFileSizeBytes: 10_000,
+      maxArchiveFiles: 2
+    },
     redaction: {
       enabled: true,
       keys: ["token", "password", "authorization", "cookie", "api_key"],
@@ -70,5 +75,58 @@ describe("ConsoleLogger", () => {
 
     const debugText = fs.readFileSync(path.join(tmpDir, "debug.txt"), "utf8");
     expect(debugText.includes("***REDACTED***")).toBe(true);
+  });
+
+  it("rotates oversized files on startup and keeps archives", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-logger-rotate-startup-"));
+    const config = createLoggingConfig(tmpDir);
+    config.rotation.maxFileSizeBytes = 120;
+    config.rotation.maxArchiveFiles = 2;
+
+    fs.writeFileSync(path.join(tmpDir, "events.jsonl"), "x".repeat(300), "utf8");
+    fs.writeFileSync(path.join(tmpDir, "debug.txt"), "y".repeat(300), "utf8");
+
+    const logger = new ConsoleLogger(config);
+    logger.status("after rotate");
+    logger.close();
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const jsonlArchived =
+      fs.existsSync(path.join(tmpDir, "events.jsonl.1")) || fs.existsSync(path.join(tmpDir, "events.jsonl.2"));
+    const debugArchived =
+      fs.existsSync(path.join(tmpDir, "debug.txt.1")) || fs.existsSync(path.join(tmpDir, "debug.txt.2"));
+
+    expect(jsonlArchived).toBe(true);
+    expect(debugArchived).toBe(true);
+    expect(fs.readFileSync(path.join(tmpDir, "events.jsonl"), "utf8")).toContain("after rotate");
+    expect(fs.readFileSync(path.join(tmpDir, "debug.txt"), "utf8")).toContain("after rotate");
+  });
+
+  it("rotates files during runtime when size exceeds threshold", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-logger-rotate-runtime-"));
+    const config = createLoggingConfig(tmpDir);
+    config.rotation.maxFileSizeBytes = 240;
+    config.rotation.maxArchiveFiles = 2;
+
+    const logger = new ConsoleLogger(config);
+    for (let index = 0; index < 12; index += 1) {
+      logger.status(`evt-${index}`, {
+        payload: "z".repeat(80)
+      });
+    }
+    logger.close();
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    const jsonlArchived =
+      fs.existsSync(path.join(tmpDir, "events.jsonl.1")) || fs.existsSync(path.join(tmpDir, "events.jsonl.2"));
+    const debugArchived =
+      fs.existsSync(path.join(tmpDir, "debug.txt.1")) || fs.existsSync(path.join(tmpDir, "debug.txt.2"));
+
+    expect(jsonlArchived).toBe(true);
+    expect(debugArchived).toBe(true);
+    expect(fs.statSync(path.join(tmpDir, "events.jsonl")).size).toBeGreaterThan(0);
+    expect(fs.statSync(path.join(tmpDir, "debug.txt")).size).toBeGreaterThan(0);
   });
 });
