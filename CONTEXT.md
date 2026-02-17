@@ -1,5 +1,53 @@
 # CONTEXT
 
+## 2026-02-17 — Shared backoff utility для orchestrator/recovery
+
+### Что было найдено
+- Логика расчёта exponential backoff + jitter была реализована в двух местах:
+  - `AgentOrchestrator` (decision retry),
+  - `RecoveryManager` (recovery wait).
+- Реализации были похожими, но не идентичными по порядку применения bounded/jitter, что создавало риск дрейфа поведения и усложняло поддержку.
+
+### Что реализовано
+1. Добавлен общий модуль:
+- `src/core/backoff.ts`
+  - `computeBoundedBackoffDelayMs(...)`
+  - `applySymmetricJitter(...)`
+
+2. Интеграция:
+- `src/core/orchestrator.ts`:
+  - `resolveDecisionRetryDelayMs` переведен на shared utility;
+  - удалена локальная дублирующая jitter-логика.
+- `src/core/recoveryManager.ts`:
+  - `computeBackoffWaitMs` переведен на shared utility;
+  - удален локальный дублирующий расчет.
+
+3. Поведенческий эффект:
+- retry/recovery теперь используют единые правила bounded backoff;
+- max-delay ограничение применяется консистентно;
+- меньше риска регрессий при будущем изменении политики backoff.
+
+### Тесты
+- Новый: `tests/unit/backoff.test.ts` (5 кейсов):
+  - экспоненциальный backoff без jitter;
+  - bounded после jitter;
+  - edge-case с невалидными/нулевыми лимитами;
+  - deterministic jitter с инъекцией random.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`32/32`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+
+### Live-run для smoke-проверки
+Run: `2026-02-17T05:23:11.584Z` -> `2026-02-17T05:23:21.865Z`, `runId=7f0352ce-8b43-4a5a-8c2b-a79dece32d60`
+
+Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Результат:
+- `completed`, `stepsExecuted=2`, `elapsedMs=10281`, `avgStepMs=5141`.
+- Старт/метрики/финиш корректно зафиксированы в `logs/agent-events.jsonl`.
+
 ## 2026-02-17 — Fail-fast decision retry policy (transient-aware)
 
 ### Что было найдено

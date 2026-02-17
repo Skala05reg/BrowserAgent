@@ -351,3 +351,66 @@
 - Что пока ограничивает:
   - оркестратор остаётся крупным и требует дальнейшей модульной декомпозиции;
   - нет отдельного benchmark/eval/replay контура для сравнений качества между версиями.
+
+---
+
+## 2026-02-17 08:24:14 MSK
+
+### Scope
+- Повторный полный проход по всем tracked файлам (`read_files_count=40`).
+- Рефакторинг архитектурной консистентности retry/recovery-механик.
+- Прогон unit-тестов и live-run агента с проверкой логов.
+
+### Что найдено
+- В проекте существовали две отдельные реализации backoff+jitter:
+  - decision retry в оркестраторе,
+  - recovery wait в recovery manager.
+- Поведение было близким, но не полностью идентичным, что создавало риск расхождения логики и усложняло сопровождение.
+
+### Что внедрено
+1. **Shared backoff utility**
+- Добавлен `src/core/backoff.ts`:
+  - `computeBoundedBackoffDelayMs(...)`
+  - `applySymmetricJitter(...)`
+- Оба пути (`orchestrator` и `recoveryManager`) переведены на общий модуль.
+
+2. **Архитектурный эффект**
+- Удалено дублирование расчета retry-delay в двух подсистемах.
+- Политика bounded backoff+jitter стала единой.
+- Будущие изменения retry-политики теперь вносятся в одном месте.
+
+3. **Тесты**
+- Добавлен `tests/unit/backoff.test.ts` (5 кейсов):
+  - экспоненциальный рост без jitter,
+  - bounded после jitter,
+  - edge-cases для нулевых лимитов,
+  - deterministic jitter через инъекцию random.
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`32/32`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+
+### Live-run + логи
+- Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+- `runId`: `7f0352ce-8b43-4a5a-8c2b-a79dece32d60`
+- Результат: `completed`, `stepsExecuted=2`, `elapsedMs=10281`, `avgStepMs=5141`.
+- Подтверждено в `logs/agent-events.jsonl`:
+  - старт с `runId` и `maxRunMs`;
+  - финальные записи `Метрики выполнения` и `Задача завершена` присутствуют.
+
+### Внешние ориентиры (internet/books)
+- Exponential Backoff And Jitter (AWS Architecture Blog): https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+- AWS Retry with Backoff pattern: https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html
+- Release It! (2nd Edition): https://pragprog.com/titles/mnee2/release-it-second-edition/
+- Site Reliability Engineering Book (cascading failures): https://sre.google/sre-book/addressing-cascading-failures/
+
+### Objective score
+- Обновлённая оценка проекта: **9.2 / 10.0**
+- Что улучшило оценку:
+  - единая retry/recovery математика без дублирования кода;
+  - выше предсказуемость задержек и проще поддержка;
+  - добавлено точечное unit-покрытие математической части backoff.
+- Что пока ограничивает:
+  - `orchestrator.ts` остаётся крупным;
+  - всё ещё нет полноценного benchmark/eval/replay контура уровня production.

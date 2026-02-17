@@ -65,6 +65,9 @@
    - decision retry использует bounded exponential backoff + jitter;
    - non-transient ошибки модели могут завершать retry-цикл сразу (fail-fast), чтобы не тратить лишнее время;
    - long-running шаги помечаются warning-событиями как `медленный шаг`.
+15. Консистентность retry-механик:
+   - расчет backoff/jitter вынесен в общий модуль и одинаково используется в decision-retry и recovery;
+   - bounded поведение задержек унифицировано между подсистемами.
 
 ## Быстрый старт
 

@@ -10,6 +10,7 @@ import { RecoveryManager } from "./recoveryManager.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { PauseController } from "./pauseController.js";
 import { AgentAction, AgentDecision, AgentHistoryItem, AgentTaskResult, PageSnapshot, PendingApproval } from "./types.js";
+import { computeBoundedBackoffDelayMs } from "./backoff.js";
 
 export interface OrchestratorStatus {
   running: boolean;
@@ -997,15 +998,13 @@ export class AgentOrchestrator {
   }
 
   private resolveDecisionRetryDelayMs(failedAttempt: number): number {
-    const baseDelayMs = this.config.agent.decisionRetryBaseDelayMs;
-    if (baseDelayMs <= 0) {
-      return 0;
-    }
-
-    const exponent = Math.max(0, failedAttempt - 1);
-    const rawDelay = baseDelayMs * Math.pow(this.config.agent.decisionRetryBackoffMultiplier, exponent);
-    const boundedDelay = Math.min(rawDelay, this.config.agent.maxDecisionRetryDelayMs);
-    return this.applyJitter(Math.round(boundedDelay), this.config.agent.decisionRetryJitterRatio);
+    return computeBoundedBackoffDelayMs({
+      baseDelayMs: this.config.agent.decisionRetryBaseDelayMs,
+      attempt: failedAttempt,
+      multiplier: this.config.agent.decisionRetryBackoffMultiplier,
+      maxDelayMs: this.config.agent.maxDecisionRetryDelayMs,
+      jitterRatio: this.config.agent.decisionRetryJitterRatio
+    });
   }
 
   private isTransientDecisionError(error: unknown): boolean {
@@ -1015,17 +1014,6 @@ export class AgentOrchestrator {
 
     const message = error.message.toLowerCase();
     return this.config.model.transientErrorKeywords.some((keyword) => message.includes(keyword.toLowerCase()));
-  }
-
-  private applyJitter(value: number, ratio: number): number {
-    if (value <= 0 || ratio <= 0) {
-      return value;
-    }
-
-    const delta = value * ratio;
-    const min = Math.max(0, value - delta);
-    const max = value + delta;
-    return Math.round(min + Math.random() * (max - min));
   }
 
   private warnOnSlowStep(step: number, stepStartedAtMs: number, outcome: string): void {

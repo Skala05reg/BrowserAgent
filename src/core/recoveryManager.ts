@@ -1,5 +1,6 @@
 import { RecoveryConfig } from "../config/types.js";
 import { AgentAction, AgentDecision } from "./types.js";
+import { computeBoundedBackoffDelayMs } from "./backoff.js";
 
 export interface RecoveryPlan {
   actions: AgentAction[];
@@ -91,19 +92,13 @@ export class RecoveryManager {
   }
 
   private computeBackoffWaitMs(consecutiveFailures: number): number {
-    const base = this.config.waitMsAfterFailure;
-    if (base <= 0) {
-      return 0;
-    }
-
-    const exponent = Math.max(0, consecutiveFailures - 1);
-    const scaled = base * Math.pow(this.config.backoffMultiplier, exponent);
-    const jitterAmplitude = scaled * this.config.jitterRatio;
-    const jitter = jitterAmplitude > 0 ? (Math.random() * 2 - 1) * jitterAmplitude : 0;
-    const withJitter = scaled + jitter;
-
-    const bounded = Math.min(withJitter, this.config.maxWaitMsAfterFailure);
-    return Math.max(0, Math.round(bounded));
+    return computeBoundedBackoffDelayMs({
+      baseDelayMs: this.config.waitMsAfterFailure,
+      attempt: consecutiveFailures,
+      multiplier: this.config.backoffMultiplier,
+      maxDelayMs: this.config.maxWaitMsAfterFailure,
+      jitterRatio: this.config.jitterRatio
+    });
   }
 
   private deduplicateActions(actions: AgentAction[]): AgentAction[] {
