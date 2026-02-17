@@ -113,6 +113,11 @@ function createRuntimeConfig(): RuntimeConfig {
         maxFileSizeBytes: 10_000,
         maxArchiveFiles: 2
       },
+      analytics: {
+        defaultRecentRuns: 20,
+        topFailureReasons: 5,
+        slowRunMs: 10_000
+      },
       redaction: {
         enabled: true,
         keys: ["token", "password", "authorization", "cookie"],

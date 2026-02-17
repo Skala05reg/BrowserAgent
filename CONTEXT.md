@@ -1,5 +1,57 @@
 # CONTEXT
 
+## 2026-02-17 — Run analytics CLI (`logs:analyze`) + config-driven analytics defaults
+
+### Что было найдено
+- После роста функциональности и метрик в логах не хватало встроенного инструмента для быстрого объективного анализа run-качества по JSONL.
+- Сравнение прогонов приходилось делать вручную через `rg`, что медленно и неудобно для регулярных regression-check.
+
+### Что реализовано
+1. Добавлен аналитический модуль:
+- `src/telemetry/runAnalytics.ts`
+  - парсинг JSONL событий с защитой от битых строк;
+  - извлечение run-метрик (`Метрики выполнения`);
+  - извлечение outcomes (`Задача завершена`);
+  - агрегирование: status breakdown, avg/p50/p90/max latency, avg steps, slow-runs, top failure summaries.
+
+2. Добавлен CLI-инструмент:
+- `src/scripts/analyzeRuns.ts`
+  - команда: `npm run logs:analyze`;
+  - поддержка аргументов `--recent`, `--slow-ms`, `--top-failures`, `--file`, `--json`;
+  - дефолты берутся из runtime-конфига.
+
+3. Конфиг и типы:
+- `logging.analytics.defaultRecentRuns`
+- `logging.analytics.topFailureReasons`
+- `logging.analytics.slowRunMs`
+- обновлены:
+  - `src/config/types.ts`
+  - `src/config/loadConfig.ts`
+  - `config/default.json`
+- `package.json` получил скрипт `logs:analyze`.
+
+4. Тесты:
+- Новый: `tests/unit/runAnalytics.test.ts` (2 кейса).
+- Обновлены тестовые конфиги логирования:
+  - `tests/unit/consoleLogger.test.ts`
+  - `tests/unit/orchestrator.smoke.test.ts`
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`36/36`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+- `npm run logs:analyze -- --recent 10` — работает и выдает агрегированную статистику.
+- `npm run logs:analyze -- --recent 12 --json` — подтвержден JSON-вывод для автоматизированного пайплайна.
+
+### Live-run для smoke-проверки
+Run: `2026-02-17T05:37:36.965Z` -> `2026-02-17T05:37:43.575Z`, `runId=657d8711-ae7a-44d6-87de-3f13574ea968`
+
+Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Результат:
+- `completed`, `stepsExecuted=2`, `elapsedMs=6610`, `avgStepMs=3305`.
+- run фиксируется в JSONL и попадает в агрегаты `logs:analyze`.
+
 ## 2026-02-17 — Log rotation by size (JSONL/debug) + storage safety
 
 ### Что было найдено

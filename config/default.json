@@ -154,6 +154,11 @@
       "maxFileSizeBytes": 10485760,
       "maxArchiveFiles": 5
     },
+    "analytics": {
+      "defaultRecentRuns": 30,
+      "topFailureReasons": 5,
+      "slowRunMs": 15000
+    },
     "redaction": {
       "enabled": true,
       "keys": [

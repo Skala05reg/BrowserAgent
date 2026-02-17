@@ -154,6 +154,7 @@ export interface LoggingConfig {
   showObservationDetails: boolean;
   timeFormat: "iso" | "locale";
   rotation: LoggingRotationConfig;
+  analytics: LoggingAnalyticsConfig;
   redaction: LoggingRedactionConfig;
   console: LoggingConsoleConfig;
   colors: LoggingColorConfig;
@@ -163,6 +164,12 @@ export interface LoggingRotationConfig {
   enabled: boolean;
   maxFileSizeBytes: number;
   maxArchiveFiles: number;
+}
+
+export interface LoggingAnalyticsConfig {
+  defaultRecentRuns: number;
+  topFailureReasons: number;
+  slowRunMs: number;
 }
 
 export interface LoggingRedactionConfig {

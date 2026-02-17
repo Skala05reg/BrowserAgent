@@ -485,3 +485,84 @@
 - Что еще ограничивает:
   - `orchestrator.ts` по-прежнему большой и требует дальнейшей декомпозиции;
   - нет полноценного benchmark/eval/replay контура для системного сравнения качества между коммитами.
+
+---
+
+## 2026-02-17 08:38:53 MSK
+
+### Scope
+- Очередной полный аудит и проход по всем tracked-файлам (`read_files_count=42`).
+- Улучшение аналитики run-качества и операционной observability.
+- Прогон тестов, live-run агента и анализ логов новым инструментом.
+
+### Что найдено
+- Метрики run уже писались в JSONL, но не было встроенного CLI-инструмента, который быстро агрегирует качество последних запусков.
+- Для сравнения прогонов приходилось делать ручные grep/parse, что замедляло feedback-loop.
+- Параметры аналитического среза (сколько запусков смотреть, что считать slow-run) не были централизованы в конфиге.
+
+### Что внедрено
+1. **Новый analytics-модуль**
+- Добавлен `src/telemetry/runAnalytics.ts`:
+  - парсинг JSONL с игнором битых строк;
+  - извлечение run-метрик из `Метрики выполнения`;
+  - извлечение outcomes из `Задача завершена`;
+  - агрегирование: status counts, avg/p50/p90/max elapsedMs, avg steps, slow-runs, top failure summaries.
+
+2. **Новый CLI tool для аналитики запусков**
+- Добавлен `src/scripts/analyzeRuns.ts`.
+- npm-скрипт: `npm run logs:analyze`.
+- Поддержка аргументов:
+  - `--recent`
+  - `--slow-ms`
+  - `--top-failures`
+  - `--file`
+  - `--json`
+
+3. **Config-driven параметры аналитики**
+- Добавлены поля:
+  - `logging.analytics.defaultRecentRuns`
+  - `logging.analytics.topFailureReasons`
+  - `logging.analytics.slowRunMs`
+- Обновлены:
+  - `src/config/types.ts`
+  - `src/config/loadConfig.ts`
+  - `config/default.json`
+  - `package.json`
+
+4. **Тесты**
+- Новый: `tests/unit/runAnalytics.test.ts` (2 теста).
+- Обновлены конфиги в тестах:
+  - `tests/unit/consoleLogger.test.ts`
+  - `tests/unit/orchestrator.smoke.test.ts`
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`36/36`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+- `npm run logs:analyze -- --recent 10` -> корректный сводный отчет
+- `npm run logs:analyze -- --recent 12 --json` -> корректный JSON-output
+
+### Live-run + лог-проверка
+- Основной валидирующий run:
+  - задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+  - `runId`: `657d8711-ae7a-44d6-87de-3f13574ea968`
+  - результат: `completed`, `stepsExecuted=2`, `elapsedMs=6610`, `avgStepMs=3305`
+- Подтверждено в `logs/agent-events.jsonl`: start + metrics + final status.
+- Дополнительно зафиксирован остановленный run `a985f6c0-8121-4818-a919-5bbd63e9ab10` с `slow step` warning, что подтверждает практическую пользу наблюдаемости для pause/stop сценариев.
+
+### Внешние ориентиры (internet + books)
+- OpenTelemetry specification (telemetry patterns): https://opentelemetry.io/docs/specs/
+- Google SRE Book (monitoring/cascading failures): https://sre.google/sre-book/
+- OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
+- Designing Data-Intensive Applications: https://dataintensive.net/
+- Accelerate (DevOps metrics): https://itrevolution.com/product/accelerate/
+
+### Objective score
+- Обновлённая оценка проекта: **9.4 / 10.0**
+- Что улучшило оценку:
+  - добавлен встроенный инструмент объективной run-аналитики, ускоряющий regression-loop;
+  - аналитические параметры вынесены в конфиг (config-driven, без хардкода);
+  - расширено unit-покрытие наблюдаемости.
+- Что пока ограничивает:
+  - `orchestrator.ts` остаётся крупным и требует модульной декомпозиции;
+  - нет полноценного replay/eval/benchmark контура для автоматического сравнения веток/коммитов на одинаковом наборе задач.

@@ -71,6 +71,9 @@
 16. Ротация логов:
    - JSONL и debug-log автоматически ротируются по размеру;
    - архивы ограничиваются заданным числом файлов для контроля дискового роста.
+17. Встроенная аналитика run-метрик:
+   - CLI-команда `logs:analyze` считает последние run-метрики по JSONL;
+   - выводит status breakdown, latency-перцентили, slow-run count и top failure summaries.
 
 ## Быстрый старт
 
@@ -113,6 +116,9 @@ npm test
 - `rotation.enabled`
 - `rotation.maxFileSizeBytes`
 - `rotation.maxArchiveFiles`
+- `analytics.defaultRecentRuns`
+- `analytics.topFailureReasons`
+- `analytics.slowRunMs`
 - `redaction.enabled`
 - `redaction.keys`
 - `redaction.mask`
@@ -219,6 +225,13 @@ npm run model:check
 Команда отправляет тестовый запрос в зависимости от `MODEL_PROVIDER`:
 - `openai_compatible` -> `chat/completions`
 - `anthropic_compatible` -> `v1/messages`
+
+Аналитика запусков:
+
+```bash
+npm run logs:analyze -- --recent 30
+npm run logs:analyze -- --recent 50 --json
+```
 
 ## Как использовать паузу
 

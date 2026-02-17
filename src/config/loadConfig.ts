@@ -112,6 +112,11 @@ const runtimeSchema = z.object({
       maxFileSizeBytes: z.number().int().positive(),
       maxArchiveFiles: z.number().int().nonnegative()
     }),
+    analytics: z.object({
+      defaultRecentRuns: z.number().int().positive(),
+      topFailureReasons: z.number().int().positive(),
+      slowRunMs: z.number().int().positive()
+    }),
     redaction: z.object({
       enabled: z.boolean(),
       keys: z.array(z.string().min(1)),
