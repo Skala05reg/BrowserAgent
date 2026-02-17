@@ -67,4 +67,6 @@ export interface AgentTaskResult {
   status: "completed" | "stopped" | "failed";
   summary: string;
   stepsExecuted: number;
+  runId: string;
+  elapsedMs: number;
 }

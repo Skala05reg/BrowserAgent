@@ -7,6 +7,7 @@ import { RuntimeConfig } from "./types.js";
 const runtimeSchema = z.object({
   agent: z.object({
     maxSteps: z.number().int().positive(),
+    maxRunMs: z.number().int().positive(),
     maxHistoryItems: z.number().int().positive(),
     stepDelayMs: z.number().int().nonnegative(),
     snapshotRetryDelayMs: z.number().int().positive(),
@@ -79,6 +80,12 @@ const runtimeSchema = z.object({
       maxReasoningLength: z.number().int().positive(),
       maxAttentionHints: z.number().int().positive(),
       maxElementReasons: z.number().int().positive()
+    }),
+    circuitBreaker: z.object({
+      enabled: z.boolean(),
+      failureThreshold: z.number().int().positive(),
+      cooldownMs: z.number().int().positive(),
+      tripOnTransientOnly: z.boolean()
     })
   }),
   safety: z.object({

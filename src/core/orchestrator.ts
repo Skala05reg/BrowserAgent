@@ -17,6 +17,7 @@ export interface OrchestratorStatus {
   pauseReason: "manual" | "ask_user" | "recovery" | null;
   stopped: boolean;
   step: number;
+  runId: string | null;
   currentTask: string | null;
   pendingApproval: PendingApproval | null;
 }
@@ -33,6 +34,7 @@ export class AgentOrchestrator {
   private pauseReason: "manual" | "ask_user" | "recovery" | null = null;
   private lastDecisionDigestSignature: string | null = null;
   private repeatedDecisionDigestCount = 0;
+  private currentRunId: string | null = null;
 
   public constructor(
     private readonly config: RuntimeConfig,
@@ -61,33 +63,61 @@ export class AgentOrchestrator {
     this.pauseReason = null;
     this.lastDecisionDigestSignature = null;
     this.repeatedDecisionDigestCount = 0;
+    const runId = crypto.randomUUID();
+    const runStartedAt = Date.now();
+    this.currentRunId = runId;
     this.pauseController.reset();
 
-    this.logger.status("Новая задача принята", { task });
+    this.logger.status("Новая задача принята", { task, runId, maxRunMs: this.config.agent.maxRunMs });
 
     try {
       await this.browserRuntime.start();
 
       for (let step = 1; step <= this.config.agent.maxSteps; step += 1) {
         this.currentStep = step;
+        const elapsedMs = Date.now() - runStartedAt;
+        if (elapsedMs > this.config.agent.maxRunMs) {
+          this.logger.warn("Превышен максимальный runtime задачи", {
+            runId,
+            elapsedMs,
+            maxRunMs: this.config.agent.maxRunMs
+          });
+          return this.finalizeTaskResult(
+            {
+              status: "failed",
+              summary: `Превышен максимальный runtime (${this.config.agent.maxRunMs}ms).`,
+              stepsExecuted: step - 1
+            },
+            runId,
+            runStartedAt
+          );
+        }
 
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
-          return {
-            status: "stopped",
-            summary: "Задача остановлена пользователем.",
-            stepsExecuted: step - 1
-          };
+          return this.finalizeTaskResult(
+            {
+              status: "stopped",
+              summary: "Задача остановлена пользователем.",
+              stepsExecuted: step - 1
+            },
+            runId,
+            runStartedAt
+          );
         }
 
         await this.pauseController.waitIfPaused();
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
-          return {
-            status: "stopped",
-            summary: "Задача остановлена пользователем.",
-            stepsExecuted: step - 1
-          };
+          return this.finalizeTaskResult(
+            {
+              status: "stopped",
+              summary: "Задача остановлена пользователем.",
+              stepsExecuted: step - 1
+            },
+            runId,
+            runStartedAt
+          );
         }
 
         let snapshot;
@@ -171,11 +201,15 @@ export class AgentOrchestrator {
         if (decision.action.name === "finish") {
           const summary = this.extractFinishSummary(decision.action.args);
           this.logger.success("Агент завершил задачу", { summary, step });
-          return {
-            status: "completed",
-            summary,
-            stepsExecuted: step
-          };
+          return this.finalizeTaskResult(
+            {
+              status: "completed",
+              summary,
+              stepsExecuted: step
+            },
+            runId,
+            runStartedAt
+          );
         }
 
         if (decision.action.name === "ask_user") {
@@ -330,19 +364,27 @@ export class AgentOrchestrator {
         maxSteps: this.config.agent.maxSteps
       });
 
-      return {
-        status: "failed",
-        summary: "Достигнут лимит шагов, задача не завершена.",
-        stepsExecuted: this.config.agent.maxSteps
-      };
+      return this.finalizeTaskResult(
+        {
+          status: "failed",
+          summary: "Достигнут лимит шагов, задача не завершена.",
+          stepsExecuted: this.config.agent.maxSteps
+        },
+        runId,
+        runStartedAt
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown orchestrator error";
       this.logger.error("Критическая ошибка оркестратора", { error: message });
-      return {
-        status: "failed",
-        summary: message,
-        stepsExecuted: this.currentStep
-      };
+      return this.finalizeTaskResult(
+        {
+          status: "failed",
+          summary: message,
+          stepsExecuted: this.currentStep
+        },
+        runId,
+        runStartedAt
+      );
     } finally {
       this.running = false;
       this.currentTask = null;
@@ -350,6 +392,7 @@ export class AgentOrchestrator {
       this.pauseReason = null;
       this.lastDecisionDigestSignature = null;
       this.repeatedDecisionDigestCount = 0;
+      this.currentRunId = null;
       this.approvalGate.deny();
     }
   }
@@ -384,8 +427,33 @@ export class AgentOrchestrator {
       pauseReason: this.pauseReason,
       stopped: this.pauseController.isStopped(),
       step: this.currentStep,
+      runId: this.currentRunId,
       currentTask: this.currentTask,
       pendingApproval: this.approvalGate.getPending()
+    };
+  }
+
+  private finalizeTaskResult(
+    result: Omit<AgentTaskResult, "runId" | "elapsedMs">,
+    runId: string,
+    runStartedAt: number
+  ): AgentTaskResult {
+    const elapsedMs = Date.now() - runStartedAt;
+    const stepsExecuted = Math.max(0, result.stepsExecuted);
+    const avgStepMs = stepsExecuted > 0 ? Math.round(elapsedMs / stepsExecuted) : 0;
+
+    this.logger.status("Метрики выполнения", {
+      runId,
+      status: result.status,
+      elapsedMs,
+      stepsExecuted,
+      avgStepMs
+    });
+
+    return {
+      ...result,
+      runId,
+      elapsedMs
     };
   }
 

@@ -148,3 +148,73 @@
 - Что пока держит оценку ниже 9+:
   - оркестратор остаётся крупным и требует дальнейшей модульной декомпозиции;
   - нет benchmark-harness и replay tooling уровня production.
+
+---
+
+## 2026-02-17 08:03:51 MSK
+
+### Scope
+- Третий подряд полный refactor-run с фокусом на отказоустойчивость model-layer и управляемость длительных запусков.
+- Повторное чтение всех tracked файлов, запуск тестов и live-run агента с анализом новых логов.
+
+### Что найдено
+- При серии ошибок primary model provider агент заново тратил время на те же неуспешные попытки на каждом шаге.
+- У run была только step-граница (`maxSteps`) без общего time-budget.
+- В логах не хватало run-level корреляции и агрегированных performance-метрик.
+
+### Что внедрено
+1. **Model circuit breaker**
+- Добавлен блок `model.circuitBreaker`:
+  - `enabled`
+  - `failureThreshold`
+  - `cooldownMs`
+  - `tripOnTransientOnly`
+- В `ModelGateway`:
+  - учёт последовательных ошибок primary;
+  - открытие circuit после threshold;
+  - skip primary во время cooldown и переход на fallback путь;
+  - reset состояния после cooldown.
+
+2. **Run timeout budget**
+- Добавлен `agent.maxRunMs`.
+- Оркестратор завершает run при превышении бюджета времени с диагностическим summary.
+
+3. **Run-level observability**
+- Для каждого запуска генерируется `runId`.
+- `runId` добавлен в start/final статус и в `AgentTaskResult`.
+- В финале логируется блок `Метрики выполнения`:
+  - `elapsedMs`
+  - `stepsExecuted`
+  - `avgStepMs`.
+
+4. **Тестируемость model-layer**
+- `ModelGateway` получил optional client overrides (для unit-тестов без сетевых вызовов).
+- Добавлен `tests/unit/modelGateway.test.ts`.
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`20/20`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped`
+
+### Live-run + логи
+- Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+- Результат: `completed`, `stepsExecuted=2`.
+- Подтверждено по логам:
+  - старт: `runId` + `maxRunMs`;
+  - финиш: `runId` + `elapsedMs`;
+  - отдельная запись: `Метрики выполнения`.
+
+### Внешние ориентиры (inspiration)
+- OpenTelemetry tracing concepts (корреляция run через идентификатор).
+- Martin Fowler Circuit Breaker pattern.
+- Google SRE подход к timeouts/budgets.
+
+### Objective score
+- Обновлённая оценка проекта: **8.9 / 10.0**
+- Что улучшило оценку:
+  - появилась model-level защита от повторных каскадных отказов;
+  - появился единый time-budget run;
+  - улучшилась аналитика производительности через run metrics.
+- Что ещё ограничивает:
+  - `orchestrator.ts` по-прежнему большой и требует дальнейшей модульной декомпозиции;
+  - пока нет полноценного benchmark/eval/replay контура.

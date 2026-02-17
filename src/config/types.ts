@@ -4,6 +4,7 @@ export type ActionLogName = "navigate" | "click" | "type" | "press" | "scroll" |
 
 export interface AgentConfig {
   maxSteps: number;
+  maxRunMs: number;
   maxHistoryItems: number;
   stepDelayMs: number;
   snapshotRetryDelayMs: number;
@@ -81,6 +82,7 @@ export interface ModelConfig {
   connectionCheckUserPrompt: string;
   connectionCheckMaxTokens: number;
   promptLimits: ModelPromptLimitsConfig;
+  circuitBreaker: ModelCircuitBreakerConfig;
 }
 
 export interface ModelPromptLimitsConfig {
@@ -90,6 +92,13 @@ export interface ModelPromptLimitsConfig {
   maxReasoningLength: number;
   maxAttentionHints: number;
   maxElementReasons: number;
+}
+
+export interface ModelCircuitBreakerConfig {
+  enabled: boolean;
+  failureThreshold: number;
+  cooldownMs: number;
+  tripOnTransientOnly: boolean;
 }
 
 export interface SafetyConfig {

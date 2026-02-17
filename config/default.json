@@ -1,6 +1,7 @@
 {
   "agent": {
     "maxSteps": 60,
+    "maxRunMs": 600000,
     "maxHistoryItems": 12,
     "stepDelayMs": 300,
     "snapshotRetryDelayMs": 1000,
@@ -97,6 +98,12 @@
       "maxReasoningLength": 240,
       "maxAttentionHints": 6,
       "maxElementReasons": 4
+    },
+    "circuitBreaker": {
+      "enabled": true,
+      "failureThreshold": 3,
+      "cooldownMs": 20000,
+      "tripOnTransientOnly": false
     }
   },
   "safety": {

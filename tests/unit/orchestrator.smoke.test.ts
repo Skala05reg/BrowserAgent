@@ -8,6 +8,7 @@ function createRuntimeConfig(): RuntimeConfig {
   return {
     agent: {
       maxSteps: 5,
+      maxRunMs: 120000,
       maxHistoryItems: 5,
       stepDelayMs: 0,
       snapshotRetryDelayMs: 100,
@@ -80,6 +81,12 @@ function createRuntimeConfig(): RuntimeConfig {
         maxReasoningLength: 160,
         maxAttentionHints: 4,
         maxElementReasons: 3
+      },
+      circuitBreaker: {
+        enabled: true,
+        failureThreshold: 2,
+        cooldownMs: 2000,
+        tripOnTransientOnly: false
       }
     },
     safety: {

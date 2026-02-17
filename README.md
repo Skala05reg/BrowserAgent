@@ -117,6 +117,7 @@ npm test
 - `console.decisionDigest.successCriteriaMaxLength`
 
 Анти-циклические guard-параметры:
+- `agent.maxRunMs`
 - `agent.guards.enabled`
 - `agent.guards.recentActionWindow`
 - `agent.guards.maxRepeatedActionBeforeRewrite`
@@ -140,6 +141,10 @@ Browser/runtime устойчивость:
 Model fallback поведение:
 - `model.fallbackMode`: `always` / `non_transient_only` / `never`
 - `model.transientErrorKeywords`
+- `model.circuitBreaker.enabled`
+- `model.circuitBreaker.failureThreshold`
+- `model.circuitBreaker.cooldownMs`
+- `model.circuitBreaker.tripOnTransientOnly`
 
 Model prompt-limits (token/cost/latency control):
 - `model.promptLimits.maxHistoryItems`
@@ -160,6 +165,10 @@ Recovery backoff:
 - `recovery.maxWaitMsAfterFailure`
 - `recovery.backoffMultiplier`
 - `recovery.jitterRatio`
+
+Run-level observability:
+- `runId` генерируется для каждой задачи и выводится в start/final logs;
+- в конце run логируются агрегированные метрики: `elapsedMs`, `stepsExecuted`, `avgStepMs`.
 
 Переменные окружения:
 

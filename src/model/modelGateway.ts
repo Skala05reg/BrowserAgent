@@ -20,6 +20,11 @@ export interface ModelClient {
   decide(input: DecisionInput): Promise<AgentDecision>;
 }
 
+export interface ModelGatewayClientOverrides {
+  primary?: ModelClient;
+  fallback?: ModelClient;
+}
+
 const decisionSchema = z.object({
   thoughtSummary: z.string().min(1),
   reasoning: z.string().min(1),
@@ -124,26 +129,34 @@ function normalizeDecisionRisk(decision: z.infer<typeof decisionSchema>): AgentD
 export class ModelGateway {
   private readonly primary: ModelClient;
   private readonly fallback: ModelClient;
+  private consecutivePrimaryFailures = 0;
+  private breakerOpenUntilMs = 0;
 
-  public constructor(private readonly runtimeConfig: RuntimeConfig, apiKey: string | undefined) {
-    this.primary = this.buildClient(runtimeConfig.model.provider, apiKey);
-    this.fallback = this.buildClient(runtimeConfig.model.fallbackProvider, apiKey);
+  public constructor(
+    private readonly runtimeConfig: RuntimeConfig,
+    apiKey: string | undefined,
+    clients: ModelGatewayClientOverrides = {}
+  ) {
+    this.primary = clients.primary ?? this.buildClient(runtimeConfig.model.provider, apiKey);
+    this.fallback = clients.fallback ?? this.buildClient(runtimeConfig.model.fallbackProvider, apiKey);
   }
 
   public async decide(input: DecisionInput): Promise<AgentDecision> {
+    const now = Date.now();
+    if (this.breakerOpenUntilMs > 0 && now >= this.breakerOpenUntilMs) {
+      this.resetPrimaryFailureState();
+    }
+    if (this.isCircuitOpen(now)) {
+      return this.decideWithFallback(input, new Error(`Primary model circuit breaker open until ${new Date(this.breakerOpenUntilMs).toISOString()}`));
+    }
+
     try {
       const decision = await this.primary.decide(input);
+      this.resetPrimaryFailureState();
       return normalizeDecisionRisk(decisionSchema.parse(decision));
     } catch (error) {
-      if (!this.runtimeConfig.agent.allowModelFallback || this.runtimeConfig.model.fallbackMode === "never") {
-        throw error;
-      }
-
-      if (this.runtimeConfig.model.fallbackMode === "non_transient_only" && this.isTransientModelError(error)) {
-        throw error;
-      }
-      const fallbackDecision = await this.fallback.decide(input);
-      return normalizeDecisionRisk(decisionSchema.parse(fallbackDecision));
+      this.registerPrimaryFailure(error, now);
+      return this.decideWithFallback(input, error);
     }
   }
 
@@ -170,6 +183,55 @@ export class ModelGateway {
 
     const message = error.message.toLowerCase();
     return this.runtimeConfig.model.transientErrorKeywords.some((keyword) => message.includes(keyword.toLowerCase()));
+  }
+
+  private decideWithFallback(input: DecisionInput, primaryError: unknown): Promise<AgentDecision> {
+    if (!this.shouldUseFallback(primaryError)) {
+      throw primaryError;
+    }
+
+    return this.fallback.decide(input).then((fallbackDecision) => normalizeDecisionRisk(decisionSchema.parse(fallbackDecision)));
+  }
+
+  private shouldUseFallback(error: unknown): boolean {
+    if (!this.runtimeConfig.agent.allowModelFallback || this.runtimeConfig.model.fallbackMode === "never") {
+      return false;
+    }
+
+    if (this.runtimeConfig.model.fallbackMode === "non_transient_only" && this.isTransientModelError(error)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isCircuitOpen(nowMs: number): boolean {
+    if (!this.runtimeConfig.model.circuitBreaker.enabled) {
+      return false;
+    }
+    return nowMs < this.breakerOpenUntilMs;
+  }
+
+  private registerPrimaryFailure(error: unknown, nowMs: number): void {
+    if (!this.runtimeConfig.model.circuitBreaker.enabled) {
+      return;
+    }
+
+    if (this.runtimeConfig.model.circuitBreaker.tripOnTransientOnly && !this.isTransientModelError(error)) {
+      return;
+    }
+
+    this.consecutivePrimaryFailures += 1;
+    if (this.consecutivePrimaryFailures < this.runtimeConfig.model.circuitBreaker.failureThreshold) {
+      return;
+    }
+
+    this.breakerOpenUntilMs = nowMs + this.runtimeConfig.model.circuitBreaker.cooldownMs;
+  }
+
+  private resetPrimaryFailureState(): void {
+    this.consecutivePrimaryFailures = 0;
+    this.breakerOpenUntilMs = 0;
   }
 }
 

@@ -1,5 +1,62 @@
 # CONTEXT
 
+## 2026-02-17 — Model circuit breaker + run timeout budget + run metrics
+
+### Что было найдено
+- `ModelGateway` не имел circuit-breaker логики: при повторных падениях primary провайдера происходили одинаковые дорогостоящие ретраи на каждом шаге.
+- В оркестраторе отсутствовал time-budget на весь run (был только `maxSteps`), что не ограничивало долгие сценарии с медленными шагами.
+- В логе не было стабильной run-корреляции (`runId`) и агрегированных run-метрик (elapsed/avg step), что усложняло анализ производительности.
+
+### Что реализовано
+1. Model circuit breaker:
+- `model.circuitBreaker.enabled`
+- `model.circuitBreaker.failureThreshold`
+- `model.circuitBreaker.cooldownMs`
+- `model.circuitBreaker.tripOnTransientOnly`
+
+Реализация в `ModelGateway`:
+- добавлен счетчик последовательных ошибок primary;
+- при достижении threshold открывается circuit на cooldown;
+- пока circuit открыт, primary пропускается и используется fallback-путь (в рамках существующей fallback-policy);
+- после окончания cooldown состояние breaker сбрасывается;
+- `ModelGateway` получил optional `client overrides` для unit-тестов.
+
+2. Run timeout budget:
+- `agent.maxRunMs` добавлен в конфиг;
+- оркестратор проверяет elapsed runtime на каждом шаге и завершает run с понятной причиной при превышении бюджета.
+
+3. Run correlation + метрики:
+- для каждого run генерируется `runId`;
+- `runId` добавлен в start/final result/status;
+- в финале пишется отдельный статус `Метрики выполнения`:
+  - `elapsedMs`
+  - `stepsExecuted`
+  - `avgStepMs`.
+
+4. Типы результата/статуса:
+- `AgentTaskResult` расширен полями `runId`, `elapsedMs`;
+- `OrchestratorStatus` расширен полем `runId`.
+
+### Тесты
+- Новый: `tests/unit/modelGateway.test.ts`
+  - breaker opens + skip primary during cooldown;
+  - сохранение поведения `fallbackMode=non_transient_only` для transient ошибок.
+- Обновлен: `tests/unit/orchestrator.smoke.test.ts` (новые config поля).
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`20/20`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped`.
+
+### Реальный run для проверки
+Run: `2026-02-17T05:02:38.172Z` -> `2026-02-17T05:02:44.909Z`, задача:
+`Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Подтверждено в логах:
+- старт содержит `runId` и `maxRunMs`;
+- итоговый статус содержит `runId`/`elapsedMs`;
+- отдельной записью логируются `Метрики выполнения`.
+
 ## 2026-02-17 — Logging redaction + lightweight JSONL + prompt limits + recovery backoff
 
 ### Что было найдено
