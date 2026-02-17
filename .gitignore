@@ -7,3 +7,5 @@ test-results/
 memory_store/
 logs/
 .browser-profile/
+__pycache__/
+.pytest_cache/

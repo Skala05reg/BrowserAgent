@@ -1,5 +1,70 @@
 # CONTEXT
 
+## 2026-02-17 — Runtime hardening + config-driven action limits + prompt dedup
+
+### Что было найдено
+- В `browserRuntime` оставались магические параметры и неограниченные аргументы действий (`wait`, `scroll`, `type`), что влияло на предсказуемость, скорость и безопасность.
+- `navigate` не ограничивал протоколы URL, а fallback-навигация из `click` могла увести на нежелательные схемы.
+- В оркестраторе был edge-case: после выхода из `waitIfPaused()` по `stop` мог выполняться лишний шаг.
+- Prompt-builder был продублирован в `openai_compatible` и `anthropic_compatible` клиентах.
+- Legacy Python SOTA-тесты падали на этапе collection в текущем TypeScript-репозитории (`ModuleNotFoundError`).
+
+### Что реализовано
+1. Конфигурируемые runtime-лимиты и тайминги:
+- `agent.snapshotRetryDelayMs`;
+- `browser.typeDelayMs`;
+- `browser.defaultScrollAmountPx`;
+- `browser.actionLimits.maxTypeTextLength`;
+- `browser.actionLimits.maxScrollAmountPx`;
+- `browser.actionLimits.maxWaitMs`;
+- `browser.actionLimits.allowedNavigationProtocols`.
+
+2. Hardening browser actions:
+- `navigate` валидирует URL по разрешенным протоколам (по умолчанию только `http:`/`https:`).
+- fallback-навигация после timeout в `click` также проходит протокольную валидацию.
+- `type` ограничивает длину текста по конфигу и использует `typeDelayMs` из конфига.
+- `wait` и `scroll` теперь ограничиваются верхними лимитами из конфига.
+
+3. Оркестратор:
+- добавлена повторная проверка `isStopped()` сразу после `waitIfPaused()` (устранен лишний шаг после stop);
+- retry-задержка повторного snapshot вынесена в `agent.snapshotRetryDelayMs`.
+
+4. Консистентность model-layer:
+- общий prompt-builder вынесен в `src/model/promptBuilder.ts`;
+- `openaiCompatibleClient` и `anthropicCompatibleClient` используют единый builder.
+
+5. Тестовый контур:
+- добавлен smoke-тест на корректный stop во время pause (`orchestrator.smoke.test.ts`);
+- Python legacy тесты переведены на корректный `importorskip`, чтобы не ломать collection в TS-проекте;
+- `.gitignore` дополнен `__pycache__/` и `.pytest_cache/`.
+
+### Проверки и верификация
+- `npm run check` — passed.
+- `npm test` — passed (`15/15`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (вместо падения collection).
+- Реальный запуск агента: `2026-02-17T04:43:41Z` -> `2026-02-17T04:43:52Z`:
+  - задача: открыть `https://example.com` и завершить;
+  - результат: `completed`, `stepsExecuted=2`, корректный `finish summary` в логах.
+- Точечная проверка runtime hardening:
+  - `navigate javascript:alert(1)` -> `ok=false`, `unsupported protocol`;
+  - `wait(ms=999999)` при `maxWaitMs=120` -> фактически `Waited 120ms`;
+  - `scroll(amount=999999)` при `maxScrollAmountPx=80` -> фактически `Scrolled down 80px`.
+
+### Измененные файлы
+- `.gitignore`
+- `config/default.json`
+- `src/browser/browserRuntime.ts`
+- `src/config/loadConfig.ts`
+- `src/config/types.ts`
+- `src/core/orchestrator.ts`
+- `src/model/promptBuilder.ts`
+- `src/model/openaiCompatibleClient.ts`
+- `src/model/anthropicCompatibleClient.ts`
+- `tests/unit/orchestrator.smoke.test.ts`
+- `tests/test_brain_sota.py`
+- `tests/test_integration_sota.py`
+- `README.md`
+
 ## 2026-02-17 — Анализ последнего run (18 шагов) + fixes против oscillation
 
 ### Что было в логе (run от `2026-02-16T22:48:11.363Z`)

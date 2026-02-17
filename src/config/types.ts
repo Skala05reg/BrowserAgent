@@ -6,6 +6,7 @@ export interface AgentConfig {
   maxSteps: number;
   maxHistoryItems: number;
   stepDelayMs: number;
+  snapshotRetryDelayMs: number;
   decisionRetryCount: number;
   allowModelFallback: boolean;
   defaultStartUrl: string;
@@ -32,6 +33,13 @@ export interface BrowserSnapshotConfig {
   viewportMarginPx: number;
 }
 
+export interface BrowserActionLimitsConfig {
+  maxTypeTextLength: number;
+  maxScrollAmountPx: number;
+  maxWaitMs: number;
+  allowedNavigationProtocols: string[];
+}
+
 export interface BrowserConfig {
   headless: boolean;
   slowMoMs: number;
@@ -44,8 +52,11 @@ export interface BrowserConfig {
   navigationWaitUntil: "load" | "domcontentloaded" | "networkidle";
   actionTimeoutMs: number;
   waitAfterActionMs: number;
+  typeDelayMs: number;
+  defaultScrollAmountPx: number;
   clickFallbackToHrefOnTimeout: boolean;
   typeActionAllowedInputTypes: string[];
+  actionLimits: BrowserActionLimitsConfig;
   snapshotWaitUntil: "load" | "domcontentloaded" | "networkidle";
   snapshotWaitTimeoutMs: number;
   adoptLatestPageOnNewTab: boolean;

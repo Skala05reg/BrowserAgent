@@ -6,6 +6,9 @@ import pytest
 import json
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+pytest.importorskip("ai_browser_agent.agent.brain", reason="Legacy Python agent module is not present in this TypeScript repository")
+pytest.importorskip("ai_browser_agent.agent.core", reason="Legacy Python agent module is not present in this TypeScript repository")
+pytest.importorskip("ai_browser_agent.browser.manager", reason="Legacy Python agent module is not present in this TypeScript repository")
 from ai_browser_agent.agent.brain import AgentBrain
 from ai_browser_agent.agent.core import Agent
 from ai_browser_agent.browser.manager import BrowserManager

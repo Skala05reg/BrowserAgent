@@ -10,6 +10,7 @@ function createRuntimeConfig(): RuntimeConfig {
       maxSteps: 5,
       maxHistoryItems: 5,
       stepDelayMs: 0,
+      snapshotRetryDelayMs: 100,
       decisionRetryCount: 0,
       allowModelFallback: true,
       defaultStartUrl: "https://example.com",
@@ -32,7 +33,15 @@ function createRuntimeConfig(): RuntimeConfig {
       actionTimeoutMs: 1000,
       waitAfterActionMs: 0,
       clickFallbackToHrefOnTimeout: true,
+      typeDelayMs: 0,
+      defaultScrollAmountPx: 600,
       typeActionAllowedInputTypes: ["text", "search", "email", "password", "tel", "url", "number"],
+      actionLimits: {
+        maxTypeTextLength: 1200,
+        maxScrollAmountPx: 3000,
+        maxWaitMs: 10000,
+        allowedNavigationProtocols: ["http:", "https:"]
+      },
       snapshotWaitUntil: "domcontentloaded",
       snapshotWaitTimeoutMs: 500,
       adoptLatestPageOnNewTab: true,
@@ -490,5 +499,93 @@ describe("AgentOrchestrator smoke", () => {
     expect(result.status).toBe("completed");
     expect(executedActions[0]).toBe("click");
     expect(executedActions[1]).toBe("navigate");
+  });
+
+  it("stops immediately after pause wait without executing an extra step", async () => {
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    let snapshotCalls = 0;
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => {
+        snapshotCalls += 1;
+        return {
+          url: "https://example.com",
+          title: "Example",
+          textExcerpt: "test page",
+          elements: []
+        };
+      }
+    };
+
+    let decideCalls = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCalls += 1;
+        if (decideCalls === 1) {
+          return {
+            thoughtSummary: "need user",
+            reasoning: "r",
+            riskLevel: "safe" as const,
+            requiresConfirmation: false,
+            successCriteria: "ask",
+            action: { name: "ask_user" as const, args: { question: "confirm" } }
+          };
+        }
+        return {
+          thoughtSummary: "done",
+          reasoning: "r",
+          riskLevel: "safe" as const,
+          requiresConfirmation: false,
+          successCriteria: "done",
+          action: { name: "finish" as const, args: { summary: "ok" } }
+        };
+      }
+    };
+
+    const tools = {
+      execute: async () => ({
+        ok: true,
+        message: "ok"
+      })
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      createRuntimeConfig(),
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const taskPromise = orchestrator.runTask("test task");
+
+    for (let index = 0; index < 100; index += 1) {
+      if (orchestrator.getStatus().paused) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(orchestrator.getStatus().paused).toBe(true);
+    orchestrator.stop();
+
+    const result = await taskPromise;
+    expect(result.status).toBe("stopped");
+    expect(result.stepsExecuted).toBe(1);
+    expect(snapshotCalls).toBe(1);
+    expect(decideCalls).toBe(1);
   });
 });

@@ -81,6 +81,14 @@ export class AgentOrchestrator {
         }
 
         await this.pauseController.waitIfPaused();
+        if (this.pauseController.isStopped()) {
+          this.logger.warn("Выполнение остановлено пользователем", { step });
+          return {
+            status: "stopped",
+            summary: "Задача остановлена пользователем.",
+            stepsExecuted: step - 1
+          };
+        }
 
         let snapshot;
         try {
@@ -88,8 +96,10 @@ export class AgentOrchestrator {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (message.includes("context was destroyed") || message.includes("navigation")) {
-            this.logger.warn(`STEP ${step}: контекст страницы изменился, пробую снять snapshot снова через 1с...`);
-            await this.sleep(1000);
+            this.logger.warn(
+              `STEP ${step}: контекст страницы изменился, пробую снять snapshot снова через ${this.config.agent.snapshotRetryDelayMs}мс...`
+            );
+            await this.sleep(this.config.agent.snapshotRetryDelayMs);
             snapshot = await this.browserRuntime.getSnapshot();
           } else {
             throw error;

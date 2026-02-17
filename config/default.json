@@ -3,6 +3,7 @@
     "maxSteps": 60,
     "maxHistoryItems": 12,
     "stepDelayMs": 300,
+    "snapshotRetryDelayMs": 1000,
     "decisionRetryCount": 2,
     "allowModelFallback": true,
     "defaultStartUrl": "https://www.google.com",
@@ -27,6 +28,8 @@
     "navigationWaitUntil": "domcontentloaded",
     "actionTimeoutMs": 15000,
     "waitAfterActionMs": 500,
+    "typeDelayMs": 10,
+    "defaultScrollAmountPx": 600,
     "clickFallbackToHrefOnTimeout": true,
     "typeActionAllowedInputTypes": [
       "text",
@@ -37,6 +40,15 @@
       "url",
       "number"
     ],
+    "actionLimits": {
+      "maxTypeTextLength": 1200,
+      "maxScrollAmountPx": 3000,
+      "maxWaitMs": 30000,
+      "allowedNavigationProtocols": [
+        "http:",
+        "https:"
+      ]
+    },
     "snapshotWaitUntil": "domcontentloaded",
     "snapshotWaitTimeoutMs": 1500,
     "adoptLatestPageOnNewTab": true,

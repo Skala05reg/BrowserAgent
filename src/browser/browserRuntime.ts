@@ -347,10 +347,19 @@ export class BrowserRuntime {
 
     switch (name) {
       case "navigate": {
-        const url = String(args.url ?? "").trim();
-        if (!url) {
+        const rawUrl = String(args.url ?? "").trim();
+        if (!rawUrl) {
           return { ok: false, message: "navigate: empty url" };
         }
+
+        const url = this.sanitizeNavigationUrl(rawUrl, page.url());
+        if (!url) {
+          return {
+            ok: false,
+            message: `navigate: unsupported protocol. Allowed: ${this.config.actionLimits.allowedNavigationProtocols.join(", ")}`
+          };
+        }
+
         const message = await this.openUrlWithTolerance(page, url);
         await page.waitForTimeout(this.config.waitAfterActionMs);
         return { ok: true, message };
@@ -364,8 +373,9 @@ export class BrowserRuntime {
         } catch (error) {
           if (this.config.clickFallbackToHrefOnTimeout && this.isNavigationTimeout(error)) {
             const fallbackHref = (await this.resolveHrefFromLocator(page, locator)) ?? (element.href || null);
-            if (fallbackHref) {
-              const message = await this.openUrlWithTolerance(page, fallbackHref);
+            const safeFallbackHref = fallbackHref ? this.sanitizeNavigationUrl(fallbackHref, page.url()) : null;
+            if (safeFallbackHref) {
+              const message = await this.openUrlWithTolerance(page, safeFallbackHref);
               await page.waitForTimeout(this.config.waitAfterActionMs);
               return {
                 ok: true,
@@ -380,7 +390,8 @@ export class BrowserRuntime {
       }
       case "type": {
         const elementId = String(args.elementId ?? "").trim();
-        const text = String(args.text ?? "");
+        const rawText = String(args.text ?? "");
+        const text = rawText.slice(0, this.config.actionLimits.maxTypeTextLength);
         const clear = args.clear !== false;
         const element = this.resolveElement(elementId);
         const locator = await this.resolveLocator(page, element);
@@ -411,9 +422,10 @@ export class BrowserRuntime {
         if (clear) {
           await locator.fill("");
         }
-        await locator.type(text, { delay: 10 });
+        await locator.type(text, { delay: this.config.typeDelayMs });
         await page.waitForTimeout(this.config.waitAfterActionMs);
-        return { ok: true, message: `Typed into ${elementId}` };
+        const truncated = rawText.length > text.length ? ` (truncated to ${text.length} chars)` : "";
+        return { ok: true, message: `Typed into ${elementId}${truncated}` };
       }
       case "press": {
         const key = String(args.key ?? "Enter");
@@ -423,7 +435,8 @@ export class BrowserRuntime {
       }
       case "scroll": {
         const direction = String(args.direction ?? "down");
-        const amount = Number(args.amount ?? 600);
+        const requestedAmount = Number(args.amount ?? 600);
+        const amount = this.normalizeScrollAmount(requestedAmount);
         const y = direction === "up" ? -Math.abs(amount) : Math.abs(amount);
         await page.evaluate((delta) => window.scrollBy({ top: delta, behavior: "smooth" }), y);
         await page.waitForTimeout(this.config.waitAfterActionMs);
@@ -578,6 +591,18 @@ export class BrowserRuntime {
     }
   }
 
+  private sanitizeNavigationUrl(rawUrl: string, baseUrl: string): string | null {
+    try {
+      const parsed = new URL(rawUrl, baseUrl);
+      if (!this.config.actionLimits.allowedNavigationProtocols.includes(parsed.protocol)) {
+        return null;
+      }
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  }
+
   private async resolveHrefFromLocator(page: Page, locator: Locator): Promise<string | null> {
     const href = await locator.getAttribute("href").catch(() => null);
     if (!href) {
@@ -620,16 +645,40 @@ export class BrowserRuntime {
   private resolveWaitDurationMs(args: Record<string, unknown>): number {
     const rawMs = args.ms;
     if (typeof rawMs === "number" && Number.isFinite(rawMs)) {
-      return Math.max(0, Math.round(rawMs));
+      return this.clampWaitMs(rawMs);
     }
 
     const duration = args.duration;
     if (typeof duration === "number" && Number.isFinite(duration)) {
       const normalized = duration <= 60 ? duration * 1000 : duration;
-      return Math.max(0, Math.round(normalized));
+      return this.clampWaitMs(normalized);
     }
 
-    return this.config.waitAfterActionMs;
+    return this.clampWaitMs(this.config.waitAfterActionMs);
+  }
+
+  private clampWaitMs(value: number): number {
+    return this.clampNumber(value, 0, this.config.actionLimits.maxWaitMs);
+  }
+
+  private normalizeScrollAmount(value: number): number {
+    const fallback = this.config.defaultScrollAmountPx;
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    const normalized = Math.abs(Math.round(value));
+    return this.clampNumber(normalized, 0, this.config.actionLimits.maxScrollAmountPx);
+  }
+
+  private clampNumber(value: number, min: number, max: number): number {
+    const normalized = Math.round(value);
+    if (normalized < min) {
+      return min;
+    }
+    if (normalized > max) {
+      return max;
+    }
+    return normalized;
   }
 
   private isNavigationTimeout(error: unknown): boolean {

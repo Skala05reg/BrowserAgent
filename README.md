@@ -117,10 +117,17 @@ npm test
 - `agent.guards.maxRepeatedScrollBeforeHotkey`
 - `agent.guards.scrollBreakKeyUp`
 - `agent.guards.scrollBreakKeyDown`
+- `agent.snapshotRetryDelayMs`
 
 Browser/runtime устойчивость:
 - `browser.clickFallbackToHrefOnTimeout`
 - `browser.typeActionAllowedInputTypes`
+- `browser.typeDelayMs`
+- `browser.defaultScrollAmountPx`
+- `browser.actionLimits.maxTypeTextLength`
+- `browser.actionLimits.maxScrollAmountPx`
+- `browser.actionLimits.maxWaitMs`
+- `browser.actionLimits.allowedNavigationProtocols`
 - `browser.snapshot.onlyViewportElements`
 - `browser.snapshot.viewportMarginPx`
 

@@ -1,6 +1,7 @@
 import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock
+pytest.importorskip("ai_browser_agent.agent.brain", reason="Legacy Python agent module is not present in this TypeScript repository")
 from ai_browser_agent.agent.brain import AgentBrain
 
 # Mock environment variables
@@ -95,4 +96,3 @@ async def test_think_multimodal(brain):
     assert last_msg[0]['type'] == 'image'
     assert last_msg[0]['source']['data'] == "base64data"
     assert last_msg[1]['type'] == 'text'
-
