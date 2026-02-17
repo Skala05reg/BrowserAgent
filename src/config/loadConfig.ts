@@ -16,6 +16,7 @@ const runtimeSchema = z.object({
     decisionRetryBackoffMultiplier: z.number().min(1),
     decisionRetryJitterRatio: z.number().min(0).max(1),
     maxDecisionRetryDelayMs: z.number().int().positive(),
+    retryOnNonTransientDecisionErrors: z.boolean(),
     slowStepWarnMs: z.number().int().positive(),
     allowModelFallback: z.boolean(),
     defaultStartUrl: z.string().min(1),

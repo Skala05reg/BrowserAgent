@@ -498,13 +498,22 @@ export class AgentOrchestrator {
       } catch (error) {
         lastError = error;
         const hasNextAttempt = attempt < maxAttempts;
-        const retryDelayMs = hasNextAttempt ? this.resolveDecisionRetryDelayMs(attempt) : 0;
+        const transient = this.isTransientDecisionError(error);
+        const retryable = transient || this.config.agent.retryOnNonTransientDecisionErrors;
+        const retryPlanned = hasNextAttempt && retryable;
+        const retryDelayMs = retryPlanned ? this.resolveDecisionRetryDelayMs(attempt) : 0;
         this.logger.warn(`Ошибка принятия решения (попытка ${attempt})`, {
           error: error instanceof Error ? error.message : String(error),
-          ...(hasNextAttempt ? { retryDelayMs } : {})
+          transient,
+          retryPlanned,
+          ...(retryPlanned ? { retryDelayMs } : {})
         });
 
-        if (hasNextAttempt && retryDelayMs > 0) {
+        if (!retryPlanned) {
+          break;
+        }
+
+        if (retryDelayMs > 0) {
           await this.sleep(retryDelayMs);
         }
       }
@@ -997,6 +1006,15 @@ export class AgentOrchestrator {
     const rawDelay = baseDelayMs * Math.pow(this.config.agent.decisionRetryBackoffMultiplier, exponent);
     const boundedDelay = Math.min(rawDelay, this.config.agent.maxDecisionRetryDelayMs);
     return this.applyJitter(Math.round(boundedDelay), this.config.agent.decisionRetryJitterRatio);
+  }
+
+  private isTransientDecisionError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return this.config.model.transientErrorKeywords.some((keyword) => message.includes(keyword.toLowerCase()));
   }
 
   private applyJitter(value: number, ratio: number): number {

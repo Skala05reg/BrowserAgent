@@ -13,6 +13,7 @@ export interface AgentConfig {
   decisionRetryBackoffMultiplier: number;
   decisionRetryJitterRatio: number;
   maxDecisionRetryDelayMs: number;
+  retryOnNonTransientDecisionErrors: boolean;
   slowStepWarnMs: number;
   allowModelFallback: boolean;
   defaultStartUrl: string;

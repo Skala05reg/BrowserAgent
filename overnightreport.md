@@ -288,3 +288,66 @@
 - Что пока ограничивает оценку:
   - `orchestrator.ts` остаётся большим и требует дальнейшей декомпозиции;
   - нет отдельного benchmark/eval/replay контура для системного сравнения версий.
+
+---
+
+## 2026-02-17 08:19:59 MSK
+
+### Scope
+- Новый полный проход по репозиторию (`read_files_count=40`).
+- Точечный refactor на скорость/устойчивость цикла `makeDecisionWithRetry`.
+- Прогон тестов и live-run агента с проверкой логов.
+
+### Что найдено
+- Retry решений модели выполнялся по всем ошибкам одинаково.
+- Для non-transient ошибок (например, schema/JSON ошибки ответа) это давало лишние попытки и увеличивало latency шага без пользы.
+- В retry-логах не хватало прозрачности о том, почему retry продолжается или останавливается.
+
+### Что внедрено
+1. **Transient-aware fail-fast retry policy**
+- Добавлен параметр `agent.retryOnNonTransientDecisionErrors` (по умолчанию `false`).
+- Retry теперь выполняется только если:
+  - ошибка transient (по `model.transientErrorKeywords`), или
+  - явно разрешены повторы non-transient (`retryOnNonTransientDecisionErrors=true`).
+- В противном случае оркестратор завершает retry-цикл сразу (fail-fast).
+
+2. **Улучшенное логирование retry**
+- В логи `Ошибка принятия решения (попытка N)` добавлены поля:
+  - `transient`
+  - `retryPlanned`
+  - `retryDelayMs` (когда retry действительно запланирован)
+
+3. **Тесты**
+- Расширен `tests/unit/orchestrator.smoke.test.ts`:
+  - transient ошибка -> retry и успешное завершение;
+  - non-transient ошибка при `false` -> fail-fast (1 попытка);
+  - non-transient ошибка при `true` -> повторные попытки разрешены.
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`27/27`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+
+### Live-run + логи
+- Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+- `runId`: `e88e5ce2-cb58-4691-8ae7-76dc6dd60323`
+- Результат: `completed`, `stepsExecuted=2`, `elapsedMs=6687`, `avgStepMs=3344`.
+- Подтверждено в `logs/agent-events.jsonl`:
+  - старт с `runId` и `maxRunMs`;
+  - финальная запись `Метрики выполнения` присутствует.
+
+### Внешние ориентиры (internet + books)
+- AWS retry/backoff pattern: https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html
+- Google SRE (cascading failures): https://sre.google/sre-book/addressing-cascading-failures/
+- Release It! (официальная страница книги): https://pragprog.com/titles/mnee2/release-it-second-edition/
+- Designing Data-Intensive Applications (официальный ресурс): https://dataintensive.net/
+
+### Objective score
+- Обновлённая оценка проекта: **9.1 / 10.0**
+- Что подняло оценку:
+  - снижены бесполезные retry-повторы на постоянных ошибках модели;
+  - лучше диагностируемость решения через `transient/retryPlanned/retryDelayMs`;
+  - тестами закрыты оба режима политики retry.
+- Что пока ограничивает:
+  - оркестратор остаётся крупным и требует дальнейшей модульной декомпозиции;
+  - нет отдельного benchmark/eval/replay контура для сравнений качества между версиями.

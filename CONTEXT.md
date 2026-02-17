@@ -1,5 +1,52 @@
 # CONTEXT
 
+## 2026-02-17 — Fail-fast decision retry policy (transient-aware)
+
+### Что было найдено
+- Повторы `makeDecisionWithRetry` выполнялись по всем типам ошибок модели.
+- При non-transient ошибках (например, валидация структуры ответа) агент тратил лишние retry-попытки и время шага.
+- В логе retry не было явной классификации `transient/non-transient`, что усложняло анализ причин повторов.
+
+### Что реализовано
+1. Добавлен новый runtime-флаг:
+- `agent.retryOnNonTransientDecisionErrors` (default: `false`).
+
+2. Логика retry в `AgentOrchestrator`:
+- ошибка классифицируется как transient через `model.transientErrorKeywords`;
+- retry выполняется, если:
+  - ошибка transient, или
+  - включен `agent.retryOnNonTransientDecisionErrors=true`;
+- при non-transient ошибке и отключенном флаге цикл retry останавливается сразу (fail-fast).
+
+3. Логирование retry:
+- в warn-событии `Ошибка принятия решения (попытка N)` добавлены поля:
+  - `transient`
+  - `retryPlanned`
+  - `retryDelayMs` (если retry действительно запланирован).
+
+4. Конфиг и типы:
+- обновлены `config/default.json`, `src/config/types.ts`, `src/config/loadConfig.ts`.
+
+### Тесты
+- Расширен `tests/unit/orchestrator.smoke.test.ts`:
+  - transient ошибка -> retry выполняется и задача завершается;
+  - non-transient ошибка при `retryOnNonTransientDecisionErrors=false` -> fail-fast, 1 попытка;
+  - non-transient ошибка при `retryOnNonTransientDecisionErrors=true` -> retries разрешены.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`27/27`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+
+### Live-run для проверки регрессий
+Run: `2026-02-17T05:18:41.557Z` -> `2026-02-17T05:18:48.245Z`, `runId=e88e5ce2-cb58-4691-8ae7-76dc6dd60323`
+
+Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Результат:
+- `completed`, `stepsExecuted=2`, `elapsedMs=6687`, `avgStepMs=3344`.
+- Старт/финал/метрики корректно зафиксированы в `logs/agent-events.jsonl`.
+
 ## 2026-02-17 — Navigation policy hardening + retry backoff/jitter + slow-step observability
 
 ### Что было найдено

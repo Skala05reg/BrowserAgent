@@ -17,6 +17,7 @@ function createRuntimeConfig(): RuntimeConfig {
       decisionRetryBackoffMultiplier: 1.5,
       decisionRetryJitterRatio: 0,
       maxDecisionRetryDelayMs: 1000,
+      retryOnNonTransientDecisionErrors: false,
       slowStepWarnMs: 60_000,
       allowModelFallback: true,
       defaultStartUrl: "https://example.com",
@@ -619,5 +620,200 @@ describe("AgentOrchestrator smoke", () => {
     expect(result.stepsExecuted).toBe(1);
     expect(snapshotCalls).toBe(1);
     expect(decideCalls).toBe(1);
+  });
+
+  it("retries transient decision errors and succeeds", async () => {
+    const config = createRuntimeConfig();
+    config.agent.decisionRetryCount = 2;
+    config.agent.decisionRetryBaseDelayMs = 0;
+    config.agent.retryOnNonTransientDecisionErrors = false;
+
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com",
+        title: "Example",
+        textExcerpt: "test page",
+        elements: []
+      })
+    };
+
+    let decideCalls = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCalls += 1;
+        if (decideCalls === 1) {
+          throw new Error("timeout while requesting model");
+        }
+        return {
+          thoughtSummary: "done",
+          reasoning: "r",
+          riskLevel: "safe" as const,
+          requiresConfirmation: false,
+          successCriteria: "done",
+          action: { name: "finish" as const, args: { summary: "ok" } }
+        };
+      }
+    };
+
+    const tools = {
+      execute: async () => ({
+        ok: true,
+        message: "ok"
+      })
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      config,
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+    expect(result.status).toBe("completed");
+    expect(decideCalls).toBe(2);
+  });
+
+  it("fails fast on non-transient decision error when non-transient retries are disabled", async () => {
+    const config = createRuntimeConfig();
+    config.agent.decisionRetryCount = 3;
+    config.agent.decisionRetryBaseDelayMs = 0;
+    config.agent.retryOnNonTransientDecisionErrors = false;
+
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com",
+        title: "Example",
+        textExcerpt: "test page",
+        elements: []
+      })
+    };
+
+    let decideCalls = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCalls += 1;
+        throw new Error("schema validation failed");
+      }
+    };
+
+    const tools = {
+      execute: async () => ({
+        ok: true,
+        message: "ok"
+      })
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      config,
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+    expect(result.status).toBe("failed");
+    expect(result.summary).toContain("schema validation failed");
+    expect(decideCalls).toBe(1);
+  });
+
+  it("retries non-transient decision errors when explicitly enabled", async () => {
+    const config = createRuntimeConfig();
+    config.agent.decisionRetryCount = 2;
+    config.agent.decisionRetryBaseDelayMs = 0;
+    config.agent.retryOnNonTransientDecisionErrors = true;
+
+    const logger = {
+      system: () => undefined,
+      status: () => undefined,
+      observation: () => undefined,
+      decision: () => undefined,
+      action: () => undefined,
+      approval: () => undefined,
+      success: () => undefined,
+      warn: () => undefined,
+      error: () => undefined
+    };
+
+    const browserRuntime = {
+      start: async () => undefined,
+      getSnapshot: async () => ({
+        url: "https://example.com",
+        title: "Example",
+        textExcerpt: "test page",
+        elements: []
+      })
+    };
+
+    let decideCalls = 0;
+    const modelGateway = {
+      decide: async () => {
+        decideCalls += 1;
+        if (decideCalls <= 2) {
+          throw new Error("model returned invalid shape");
+        }
+        return {
+          thoughtSummary: "done",
+          reasoning: "r",
+          riskLevel: "safe" as const,
+          requiresConfirmation: false,
+          successCriteria: "done",
+          action: { name: "finish" as const, args: { summary: "ok" } }
+        };
+      }
+    };
+
+    const tools = {
+      execute: async () => ({
+        ok: true,
+        message: "ok"
+      })
+    };
+
+    const orchestrator = new AgentOrchestrator(
+      config,
+      logger as never,
+      browserRuntime as never,
+      tools as never,
+      modelGateway as never,
+      new PauseController(),
+      new ApprovalGate()
+    );
+
+    const result = await orchestrator.runTask("test task");
+    expect(result.status).toBe("completed");
+    expect(decideCalls).toBe(3);
   });
 });

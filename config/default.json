@@ -10,6 +10,7 @@
     "decisionRetryBackoffMultiplier": 1.8,
     "decisionRetryJitterRatio": 0.05,
     "maxDecisionRetryDelayMs": 4000,
+    "retryOnNonTransientDecisionErrors": false,
     "slowStepWarnMs": 12000,
     "allowModelFallback": true,
     "defaultStartUrl": "https://www.google.com",

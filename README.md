@@ -63,6 +63,7 @@
 14. Безопасность и стабильность навигации/решений:
    - central navigation policy блокирует небезопасные URL (private hosts/IP и запрещенные host-patterns);
    - decision retry использует bounded exponential backoff + jitter;
+   - non-transient ошибки модели могут завершать retry-цикл сразу (fail-fast), чтобы не тратить лишнее время;
    - long-running шаги помечаются warning-событиями как `медленный шаг`.
 
 ## Быстрый старт
@@ -126,6 +127,7 @@ npm test
 - `agent.decisionRetryBackoffMultiplier`
 - `agent.decisionRetryJitterRatio`
 - `agent.maxDecisionRetryDelayMs`
+- `agent.retryOnNonTransientDecisionErrors`
 - `agent.slowStepWarnMs`
 - `agent.guards.enabled`
 - `agent.guards.recentActionWindow`
