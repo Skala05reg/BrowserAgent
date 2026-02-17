@@ -60,8 +60,8 @@ describe("runAnalytics", () => {
     expect(report.statusCounts.completed).toBe(1);
     expect(report.statusCounts.failed).toBe(1);
     expect(report.elapsedMs.avg).toBe(4000);
-    expect(report.elapsedMs.p50).toBe(3000);
-    expect(report.elapsedMs.p90).toBe(3000);
+    expect(report.elapsedMs.p50).toBe(4000);
+    expect(report.elapsedMs.p90).toBe(4800);
     expect(report.elapsedMs.max).toBe(5000);
     expect(report.avgStepsExecuted).toBe(4.5);
     expect(report.stepTimingsMs).toEqual({
@@ -70,7 +70,7 @@ describe("runAnalytics", () => {
       decisionAvg: 227,
       actionAvg: 320,
       totalAvg: 760,
-      totalP90: 760
+      totalP90: 808
     });
     expect(report.slowRuns).toBe(1);
     expect(report.topFailureSummaries).toEqual([{ summary: "timeout", count: 1 }]);

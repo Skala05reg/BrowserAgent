@@ -638,3 +638,58 @@
 - Что всё ещё ограничивает:
   - `orchestrator.ts` остаётся крупным и нуждается в модульной декомпозиции;
   - пока нет полноценного replay/eval/benchmark контура для автоматического сравнения версии на фиксированном наборе задач.
+
+---
+
+## 2026-02-17 08:49:13 MSK
+
+### Scope
+- Ещё один полный проход по репозиторию (`read_files_count=42`) с фокусом на точность speed-аналитики.
+- Рефакторинг квантилей в `runAnalytics` и повторная end-to-end проверка через тесты + live-run.
+
+### Что найдено
+- Перцентили (`p50/p90`) в `src/telemetry/runAnalytics.ts` вычислялись дискретно через `floor`.
+- На коротких выборках это занижало хвостовую задержку и делало отчёт менее чувствительным к деградациям.
+
+### Что внедрено
+1. **Точный расчёт перцентилей**
+- Переписан `percentile(...)` на линейную интерполяцию между соседними значениями.
+- Добавлены явные граничные ветки для `ratio<=0` и `ratio>=1`.
+
+2. **Обновление unit-тестов**
+- `tests/unit/runAnalytics.test.ts`:
+  - `elapsedMs.p50`: `3000 -> 4000`
+  - `elapsedMs.p90`: `3000 -> 4800`
+  - `stepTimingsMs.totalP90`: `760 -> 808`
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`36/36`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (legacy python smoke)
+- `npm run logs:analyze -- --recent 12` -> корректный отчёт с интерполированными квантилями:
+  - `elapsedMs p50=6932`, `p90=14245`
+  - `stepTimingsMs totalP90=4508`
+
+### Live-run + лог-проверка
+- Проверочный run:
+  - задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+  - `runId`: `b9231fb9-17c5-4540-bca8-5670132ff68a`
+  - результат: `completed`, `stepsExecuted=2`, `elapsedMs=8477`, `avgStepMs=4239`
+- По `logs/agent-events.jsonl` подтверждено:
+  - две записи `Метрики шага` для step 1/2;
+  - финальные `Метрики выполнения` и `Задача завершена`.
+
+### Внешние ориентиры (internet + books)
+- Prometheus `histogram_quantile` (интерполяция квантилей): https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile
+- OpenTelemetry Metrics API (official): https://opentelemetry.io/docs/specs/otel/metrics/api/
+- Google SRE Book (monitoring): https://sre.google/sre-book/
+
+### Objective score
+- Обновлённая оценка проекта: **9.6 / 10.0**
+- Что подняло оценку:
+  - аналитика задержек стала объективнее на коротких и средних выборках;
+  - уменьшен риск ложного «нормально» по p90 при фактическом росте latency;
+  - подтверждена работоспособность live-run + логами + тестами.
+- Что всё ещё ограничивает:
+  - `orchestrator.ts` всё ещё перегружен и требует декомпозиции на step-engine/retry-engine;
+  - нет отдельного автоматического performance-baseline пайплайна (регулярный replay + сравнение p90 между коммитами).

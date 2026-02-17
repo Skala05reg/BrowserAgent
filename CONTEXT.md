@@ -1,5 +1,36 @@
 # CONTEXT
 
+## 2026-02-17 — Percentile interpolation for run analytics accuracy
+
+### Что было найдено
+- В `src/telemetry/runAnalytics.ts` перцентили (`p50/p90`) считались через `floor`-индекс.
+- На маленьких выборках это системно занижало хвостовые значения (пример: `[3000, 5000]` давал `p90=3000`).
+- Из-за этого latency-аналитика могла недооценивать деградации скорости.
+
+### Что реализовано
+1. Обновлен расчёт перцентилей:
+- вместо дискретного выбора по индексу введена линейная интерполяция между соседними точками;
+- крайние случаи (`ratio<=0`, `ratio>=1`) обрабатываются явно.
+
+2. Обновлены тесты:
+- `tests/unit/runAnalytics.test.ts`:
+  - `elapsedMs.p50` обновлён до `4000`;
+  - `elapsedMs.p90` обновлён до `4800`;
+  - `stepTimingsMs.totalP90` обновлён до `808`.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`36/36`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (legacy python smoke).
+- Live-run: `runId=b9231fb9-17c5-4540-bca8-5670132ff68a`, статус `completed`, `elapsedMs=8477`, `stepsExecuted=2`.
+- `npm run logs:analyze -- --recent 12` показывает интерполированные значения:
+  - `elapsedMs p50=6932`, `p90=14245`
+  - `stepTimingsMs totalP90=4508`
+
+### Внешние ориентиры
+- Prometheus function `histogram_quantile` (интерполяция квантилей): https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile
+- OpenTelemetry metrics API (official): https://opentelemetry.io/docs/specs/otel/metrics/api/
+
 ## 2026-02-17 — Step-level performance telemetry + analytics enrichment
 
 ### Что было найдено

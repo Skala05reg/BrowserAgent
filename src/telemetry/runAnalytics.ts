@@ -288,8 +288,20 @@ function percentile(sortedValues: number[], ratio: number): number {
   }
 
   const safeRatio = Math.min(1, Math.max(0, ratio));
-  const index = Math.floor((sortedValues.length - 1) * safeRatio);
-  return sortedValues[index] ?? 0;
+  if (safeRatio <= 0) {
+    return sortedValues[0] ?? 0;
+  }
+  if (safeRatio >= 1) {
+    return sortedValues[sortedValues.length - 1] ?? 0;
+  }
+
+  const position = (sortedValues.length - 1) * safeRatio;
+  const leftIndex = Math.floor(position);
+  const rightIndex = Math.ceil(position);
+  const left = sortedValues[leftIndex] ?? 0;
+  const right = sortedValues[rightIndex] ?? left;
+  const fraction = position - leftIndex;
+  return left + (right - left) * fraction;
 }
 
 function roundSafe(value: number, digits = 0): number {
