@@ -12,6 +12,11 @@ const runtimeSchema = z.object({
     stepDelayMs: z.number().int().nonnegative(),
     snapshotRetryDelayMs: z.number().int().positive(),
     decisionRetryCount: z.number().int().nonnegative(),
+    decisionRetryBaseDelayMs: z.number().int().nonnegative(),
+    decisionRetryBackoffMultiplier: z.number().min(1),
+    decisionRetryJitterRatio: z.number().min(0).max(1),
+    maxDecisionRetryDelayMs: z.number().int().positive(),
+    slowStepWarnMs: z.number().int().positive(),
     allowModelFallback: z.boolean(),
     defaultStartUrl: z.string().min(1),
     guards: z.object({
@@ -40,7 +45,9 @@ const runtimeSchema = z.object({
       maxTypeTextLength: z.number().int().positive(),
       maxScrollAmountPx: z.number().int().positive(),
       maxWaitMs: z.number().int().positive(),
-      allowedNavigationProtocols: z.array(z.string().min(1)).min(1)
+      allowedNavigationProtocols: z.array(z.string().min(1)).min(1),
+      blockedHostPatterns: z.array(z.string().min(1)),
+      allowPrivateNetworkHosts: z.boolean()
     }),
     snapshotWaitUntil: z.enum(["load", "domcontentloaded", "networkidle"]),
     snapshotWaitTimeoutMs: z.number().int().positive(),

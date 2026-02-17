@@ -9,6 +9,11 @@ export interface AgentConfig {
   stepDelayMs: number;
   snapshotRetryDelayMs: number;
   decisionRetryCount: number;
+  decisionRetryBaseDelayMs: number;
+  decisionRetryBackoffMultiplier: number;
+  decisionRetryJitterRatio: number;
+  maxDecisionRetryDelayMs: number;
+  slowStepWarnMs: number;
   allowModelFallback: boolean;
   defaultStartUrl: string;
   guards: AgentGuardsConfig;
@@ -39,6 +44,8 @@ export interface BrowserActionLimitsConfig {
   maxScrollAmountPx: number;
   maxWaitMs: number;
   allowedNavigationProtocols: string[];
+  blockedHostPatterns: string[];
+  allowPrivateNetworkHosts: boolean;
 }
 
 export interface BrowserConfig {

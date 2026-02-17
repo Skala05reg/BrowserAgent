@@ -13,6 +13,11 @@ function createRuntimeConfig(): RuntimeConfig {
       stepDelayMs: 0,
       snapshotRetryDelayMs: 100,
       decisionRetryCount: 0,
+      decisionRetryBaseDelayMs: 100,
+      decisionRetryBackoffMultiplier: 1.5,
+      decisionRetryJitterRatio: 0,
+      maxDecisionRetryDelayMs: 1000,
+      slowStepWarnMs: 60_000,
       allowModelFallback: true,
       defaultStartUrl: "https://example.com",
       guards: {
@@ -41,7 +46,9 @@ function createRuntimeConfig(): RuntimeConfig {
         maxTypeTextLength: 1200,
         maxScrollAmountPx: 3000,
         maxWaitMs: 10000,
-        allowedNavigationProtocols: ["http:", "https:"]
+        allowedNavigationProtocols: ["http:", "https:"],
+        blockedHostPatterns: ["localhost"],
+        allowPrivateNetworkHosts: false
       },
       snapshotWaitUntil: "domcontentloaded",
       snapshotWaitTimeoutMs: 500,

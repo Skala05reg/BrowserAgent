@@ -75,6 +75,8 @@ export class AgentOrchestrator {
 
       for (let step = 1; step <= this.config.agent.maxSteps; step += 1) {
         this.currentStep = step;
+        const stepStartedAt = Date.now();
+        let stepOutcome = "running";
         const elapsedMs = Date.now() - runStartedAt;
         if (elapsedMs > this.config.agent.maxRunMs) {
           this.logger.warn("Превышен максимальный runtime задачи", {
@@ -82,6 +84,8 @@ export class AgentOrchestrator {
             elapsedMs,
             maxRunMs: this.config.agent.maxRunMs
           });
+          stepOutcome = "max_run_timeout";
+          this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
               status: "failed",
@@ -95,6 +99,8 @@ export class AgentOrchestrator {
 
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
+          stepOutcome = "stopped";
+          this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
               status: "stopped",
@@ -109,6 +115,8 @@ export class AgentOrchestrator {
         await this.pauseController.waitIfPaused();
         if (this.pauseController.isStopped()) {
           this.logger.warn("Выполнение остановлено пользователем", { step });
+          stepOutcome = "stopped_after_pause";
+          this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
               status: "stopped",
@@ -201,6 +209,8 @@ export class AgentOrchestrator {
         if (decision.action.name === "finish") {
           const summary = this.extractFinishSummary(decision.action.args);
           this.logger.success("Агент завершил задачу", { summary, step });
+          stepOutcome = "finished";
+          this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           return this.finalizeTaskResult(
             {
               status: "completed",
@@ -221,6 +231,8 @@ export class AgentOrchestrator {
           this.logger.status("Ожидаю ручные действия в браузере", {
             resumeHint: "После выполнения действия нажми Enter или введи /resume"
           });
+          stepOutcome = "ask_user_pause";
+          this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
           continue;
         }
 
@@ -246,6 +258,8 @@ export class AgentOrchestrator {
               step,
               action: decision.action
             });
+            stepOutcome = "approval_denied";
+            this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
             continue;
           }
           this.logger.approval("Действие подтверждено пользователем", { step, action: decision.action });
@@ -344,6 +358,8 @@ export class AgentOrchestrator {
             this.logger.status("Ожидаю ручные действия в браузере", {
               resumeHint: "После проверки нажми Enter или введи /resume"
             });
+            stepOutcome = "recovery_pause";
+            this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
             continue;
           }
 
@@ -358,6 +374,8 @@ export class AgentOrchestrator {
         }
 
         await this.sleep(this.config.agent.stepDelayMs);
+        stepOutcome = actionSucceeded ? "action_success" : "action_failed";
+        this.warnOnSlowStep(step, stepStartedAt, stepOutcome);
       }
 
       this.logger.warn("Достигнут лимит шагов", {
@@ -465,8 +483,9 @@ export class AgentOrchestrator {
     route: ReturnType<SubAgentRouter["selectRoute"]>
   ) {
     let lastError: unknown = null;
+    const maxAttempts = this.config.agent.decisionRetryCount + 1;
 
-    for (let attempt = 1; attempt <= this.config.agent.decisionRetryCount + 1; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         return await this.modelGateway.decide({
           task,
@@ -478,9 +497,16 @@ export class AgentOrchestrator {
         });
       } catch (error) {
         lastError = error;
+        const hasNextAttempt = attempt < maxAttempts;
+        const retryDelayMs = hasNextAttempt ? this.resolveDecisionRetryDelayMs(attempt) : 0;
         this.logger.warn(`Ошибка принятия решения (попытка ${attempt})`, {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          ...(hasNextAttempt ? { retryDelayMs } : {})
         });
+
+        if (hasNextAttempt && retryDelayMs > 0) {
+          await this.sleep(retryDelayMs);
+        }
       }
     }
 
@@ -959,6 +985,42 @@ export class AgentOrchestrator {
       return normalized;
     }
     return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+  }
+
+  private resolveDecisionRetryDelayMs(failedAttempt: number): number {
+    const baseDelayMs = this.config.agent.decisionRetryBaseDelayMs;
+    if (baseDelayMs <= 0) {
+      return 0;
+    }
+
+    const exponent = Math.max(0, failedAttempt - 1);
+    const rawDelay = baseDelayMs * Math.pow(this.config.agent.decisionRetryBackoffMultiplier, exponent);
+    const boundedDelay = Math.min(rawDelay, this.config.agent.maxDecisionRetryDelayMs);
+    return this.applyJitter(Math.round(boundedDelay), this.config.agent.decisionRetryJitterRatio);
+  }
+
+  private applyJitter(value: number, ratio: number): number {
+    if (value <= 0 || ratio <= 0) {
+      return value;
+    }
+
+    const delta = value * ratio;
+    const min = Math.max(0, value - delta);
+    const max = value + delta;
+    return Math.round(min + Math.random() * (max - min));
+  }
+
+  private warnOnSlowStep(step: number, stepStartedAtMs: number, outcome: string): void {
+    const elapsedMs = Date.now() - stepStartedAtMs;
+    if (elapsedMs < this.config.agent.slowStepWarnMs) {
+      return;
+    }
+
+    this.logger.warn(`STEP ${step}: медленный шаг`, {
+      elapsedMs,
+      thresholdMs: this.config.agent.slowStepWarnMs,
+      outcome
+    });
   }
 
   private async sleep(ms: number): Promise<void> {

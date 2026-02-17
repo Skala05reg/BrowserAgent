@@ -6,6 +6,11 @@
     "stepDelayMs": 300,
     "snapshotRetryDelayMs": 1000,
     "decisionRetryCount": 2,
+    "decisionRetryBaseDelayMs": 250,
+    "decisionRetryBackoffMultiplier": 1.8,
+    "decisionRetryJitterRatio": 0.05,
+    "maxDecisionRetryDelayMs": 4000,
+    "slowStepWarnMs": 12000,
     "allowModelFallback": true,
     "defaultStartUrl": "https://www.google.com",
     "guards": {
@@ -48,7 +53,15 @@
       "allowedNavigationProtocols": [
         "http:",
         "https:"
-      ]
+      ],
+      "blockedHostPatterns": [
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "169.254.169.254",
+        "metadata.google.internal"
+      ],
+      "allowPrivateNetworkHosts": false
     },
     "snapshotWaitUntil": "domcontentloaded",
     "snapshotWaitTimeoutMs": 1500,

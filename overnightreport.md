@@ -218,3 +218,73 @@
 - Что ещё ограничивает:
   - `orchestrator.ts` по-прежнему большой и требует дальнейшей модульной декомпозиции;
   - пока нет полноценного benchmark/eval/replay контура.
+
+---
+
+## 2026-02-17 08:14:50 MSK
+
+### Scope
+- Полный повторный проход всех tracked файлов (`read_files_count=39`).
+- Завершение незакрытого refactor-пакета: навигационная безопасность + retry-устойчивость + наблюдаемость шага.
+- Прогон тестов и live-run агента с проверкой логов.
+
+### Что найдено
+- Новые конфиг-поля для retry/navigation уже были добавлены, но частично не использовались в runtime.
+- Навигация защищалась только по протоколу; не было host-level защиты (private IP/metadata/localhost).
+- Повторные попытки принятия решения шли без экспоненциальной паузы.
+- Не было отдельного warning-сигнала о медленных шагах.
+
+### Что сделано
+1. **Navigation policy hardening**
+- Добавлен `src/browser/navigationPolicy.ts`.
+- Введены конфиг-параметры и их применение:
+  - `browser.actionLimits.blockedHostPatterns`
+  - `browser.actionLimits.allowPrivateNetworkHosts`
+- `BrowserRuntime` переведен на централизованную проверку URL:
+  - `navigate` теперь дает точную причину отказа;
+  - `click` fallback по `href` проходит ту же policy и не делает unsafe переход.
+
+2. **Decision retry backoff + jitter**
+- Оркестратор теперь применяет bounded exponential backoff при retry модели:
+  - `agent.decisionRetryBaseDelayMs`
+  - `agent.decisionRetryBackoffMultiplier`
+  - `agent.decisionRetryJitterRatio`
+  - `agent.maxDecisionRetryDelayMs`
+- В warn-логе retry добавляется `retryDelayMs`.
+
+3. **Slow-step observability**
+- Добавлен порог `agent.slowStepWarnMs`.
+- Для долгих шагов логируется `STEP N: медленный шаг` с `elapsedMs`, `thresholdMs`, `outcome`.
+
+4. **Тесты**
+- Новый: `tests/unit/navigationPolicy.test.ts` (4 кейса).
+- Обновлен: `tests/unit/orchestrator.smoke.test.ts` (runtime config синхронизирован с новыми обязательными полями).
+
+### Проверки
+- `npm run check` -> passed
+- `npm test` -> passed (`24/24`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped` (ожидаемо для legacy python smoke в этом TS-проекте)
+
+### Live-run + лог-проверка
+- Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+- `runId`: `76373ce1-0f18-432b-b760-e194f54ea87a`
+- Результат: `completed`, `stepsExecuted=2`, `elapsedMs=7067`, `avgStepMs=3534`.
+- Подтверждено по `logs/agent-events.jsonl`:
+  - старт содержит `runId` и `maxRunMs`;
+  - финальная запись `Метрики выполнения` присутствует и корректна.
+
+### Внешние ориентиры (inspiration)
+- OWASP SSRF Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+- AWS Prescriptive Guidance (Retry with backoff): https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html
+- Martin Fowler (Circuit Breaker): https://martinfowler.com/bliki/CircuitBreaker.html
+- Google SRE Book (Addressing Cascading Failures): https://sre.google/sre-book/addressing-cascading-failures/
+
+### Objective score
+- Обновлённая оценка проекта: **9.0 / 10.0**
+- Что подняло оценку:
+  - закрыта критичная часть URL security policy (host-level ограничения);
+  - retry-model логика стала управляемой и предсказуемой;
+  - улучшена диагностика latency через slow-step предупреждения.
+- Что пока ограничивает оценку:
+  - `orchestrator.ts` остаётся большим и требует дальнейшей декомпозиции;
+  - нет отдельного benchmark/eval/replay контура для системного сравнения версий.

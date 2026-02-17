@@ -1,5 +1,61 @@
 # CONTEXT
 
+## 2026-02-17 — Navigation policy hardening + retry backoff/jitter + slow-step observability
+
+### Что было найдено
+- В конфиге уже появились новые параметры retry/navigation, но часть из них не была реально подключена в runtime-логике.
+- `navigate`/`click` fallback проверяли только протокол, без host-level ограничений (private IP/localhost/metadata-hosts).
+- Повторы `modelGateway.decide()` шли без управляемой паузы между попытками.
+- Не было явного warn-сигнала о медленных шагах (когда шаг сильно дольше нормы).
+
+### Что реализовано
+1. Навигационная policy в runtime:
+- добавлен `src/browser/navigationPolicy.ts` с централизованной проверкой URL:
+  - protocol allow-list (`allowedNavigationProtocols`);
+  - host deny-list (`blockedHostPatterns`);
+  - блок private network hosts/IP (с флагом `allowPrivateNetworkHosts`).
+- `BrowserRuntime` переведен на `resolveSafeNavigationUrl`:
+  - `navigate` возвращает точную причину отказа (`invalid URL`, `unsupported protocol`, `blocked host`, `private host/IP`);
+  - `click` fallback-to-href теперь тоже проходит policy и не делает небезопасный переход.
+
+2. Retry устойчивость в оркестраторе:
+- в `makeDecisionWithRetry` добавлены bounded exponential backoff + jitter:
+  - `agent.decisionRetryBaseDelayMs`
+  - `agent.decisionRetryBackoffMultiplier`
+  - `agent.decisionRetryJitterRatio`
+  - `agent.maxDecisionRetryDelayMs`
+- лог retry теперь показывает `retryDelayMs` между попытками.
+
+3. Observability производительности:
+- добавлен `agent.slowStepWarnMs`;
+- если шаг длится дольше порога, оркестратор пишет `STEP N: медленный шаг` с `elapsedMs`, `thresholdMs`, `outcome`.
+
+4. Конфиг/типы/схема:
+- новые поля добавлены в:
+  - `config/default.json`
+  - `src/config/types.ts`
+  - `src/config/loadConfig.ts`
+- smoke test-конфиг синхронизирован с новыми обязательными полями.
+
+5. Тесты:
+- добавлен `tests/unit/navigationPolicy.test.ts` (4 кейса: relative URL, protocol block, host/private block, allow private by config).
+- обновлен `tests/unit/orchestrator.smoke.test.ts` под расширенный runtime config.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`24/24`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped` (pytest code 5 из-за полного skip-набора, ожидаемо для legacy python smoke).
+
+### Live-run для проверки
+Run: `2026-02-17T05:13:14.178Z` -> `2026-02-17T05:13:21.245Z`, `runId=76373ce1-0f18-432b-b760-e194f54ea87a`
+
+Задача: `Открой https://example.com и заверши задачу одной короткой фразой.`
+
+Подтверждено в логах:
+- старт содержит `runId` + `maxRunMs`;
+- run завершен со статусом `completed`, `stepsExecuted=2`;
+- есть финальная запись `Метрики выполнения` (`elapsedMs=7067`, `avgStepMs=3534`).
+
 ## 2026-02-17 — Model circuit breaker + run timeout budget + run metrics
 
 ### Что было найдено

@@ -60,6 +60,10 @@
    - многоступенчатый поиск локатора (id/href/name/placeholder/aria/text + fallback selector);
    - guard распознает oscillation между одними и теми же URL и переводит шаг в breakout-навигацию по ссылке из main-контента;
    - context ranking штрафует header/footer/nav элементы и повторные/падавшие недавно targets.
+14. Безопасность и стабильность навигации/решений:
+   - central navigation policy блокирует небезопасные URL (private hosts/IP и запрещенные host-patterns);
+   - decision retry использует bounded exponential backoff + jitter;
+   - long-running шаги помечаются warning-событиями как `медленный шаг`.
 
 ## Быстрый старт
 
@@ -118,6 +122,11 @@ npm test
 
 Анти-циклические guard-параметры:
 - `agent.maxRunMs`
+- `agent.decisionRetryBaseDelayMs`
+- `agent.decisionRetryBackoffMultiplier`
+- `agent.decisionRetryJitterRatio`
+- `agent.maxDecisionRetryDelayMs`
+- `agent.slowStepWarnMs`
 - `agent.guards.enabled`
 - `agent.guards.recentActionWindow`
 - `agent.guards.maxRepeatedActionBeforeRewrite`
@@ -135,6 +144,8 @@ Browser/runtime устойчивость:
 - `browser.actionLimits.maxScrollAmountPx`
 - `browser.actionLimits.maxWaitMs`
 - `browser.actionLimits.allowedNavigationProtocols`
+- `browser.actionLimits.blockedHostPatterns`
+- `browser.actionLimits.allowPrivateNetworkHosts`
 - `browser.snapshot.onlyViewportElements`
 - `browser.snapshot.viewportMarginPx`
 

@@ -2,6 +2,7 @@ import path from "node:path";
 import { chromium, BrowserContext, Locator, Page } from "playwright";
 import { BrowserConfig } from "../config/types.js";
 import { PageSnapshot, ToolExecutionResult } from "../core/types.js";
+import { resolveSafeNavigationUrl } from "./navigationPolicy.js";
 
 interface InternalElement {
   id: string;
@@ -352,15 +353,15 @@ export class BrowserRuntime {
           return { ok: false, message: "navigate: empty url" };
         }
 
-        const url = this.sanitizeNavigationUrl(rawUrl, page.url());
-        if (!url) {
+        const resolved = this.resolveNavigationTarget(rawUrl, page.url());
+        if (!resolved.ok || !resolved.url) {
           return {
             ok: false,
-            message: `navigate: unsupported protocol. Allowed: ${this.config.actionLimits.allowedNavigationProtocols.join(", ")}`
+            message: `navigate: ${resolved.reason}`
           };
         }
 
-        const message = await this.openUrlWithTolerance(page, url);
+        const message = await this.openUrlWithTolerance(page, resolved.url);
         await page.waitForTimeout(this.config.waitAfterActionMs);
         return { ok: true, message };
       }
@@ -373,15 +374,25 @@ export class BrowserRuntime {
         } catch (error) {
           if (this.config.clickFallbackToHrefOnTimeout && this.isNavigationTimeout(error)) {
             const fallbackHref = (await this.resolveHrefFromLocator(page, locator)) ?? (element.href || null);
-            const safeFallbackHref = fallbackHref ? this.sanitizeNavigationUrl(fallbackHref, page.url()) : null;
-            if (safeFallbackHref) {
-              const message = await this.openUrlWithTolerance(page, safeFallbackHref);
-              await page.waitForTimeout(this.config.waitAfterActionMs);
+            if (fallbackHref) {
+              const resolved = this.resolveNavigationTarget(fallbackHref, page.url());
+              if (resolved.ok && resolved.url) {
+                const message = await this.openUrlWithTolerance(page, resolved.url);
+                await page.waitForTimeout(this.config.waitAfterActionMs);
+                return {
+                  ok: true,
+                  message: `Clicked ${elementId} (fallback to href). ${message}`
+                };
+              }
               return {
-                ok: true,
-                message: `Clicked ${elementId} (fallback to href). ${message}`
+                ok: false,
+                message: `click: timed out and fallback href was rejected (${resolved.reason})`
               };
             }
+            return {
+              ok: false,
+              message: `click: timed out and no href fallback available for ${elementId}`
+            };
           }
           throw error;
         }
@@ -450,6 +461,17 @@ export class BrowserRuntime {
       default:
         return { ok: false, message: `Unsupported browser action: ${name}` };
     }
+  }
+
+  private resolveNavigationTarget(rawUrl: string, baseUrl: string): ReturnType<typeof resolveSafeNavigationUrl> {
+    const resolved = resolveSafeNavigationUrl(rawUrl, baseUrl, this.config.actionLimits);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    return {
+      ...resolved,
+      reason: "ok"
+    };
   }
 
   private resolveElement(elementIdOrDomId: string): InternalElement {
@@ -588,18 +610,6 @@ export class BrowserRuntime {
         return `Opened ${url} (partial load; timeout on ${this.config.navigationWaitUntil})`;
       }
       throw error;
-    }
-  }
-
-  private sanitizeNavigationUrl(rawUrl: string, baseUrl: string): string | null {
-    try {
-      const parsed = new URL(rawUrl, baseUrl);
-      if (!this.config.actionLimits.allowedNavigationProtocols.includes(parsed.protocol)) {
-        return null;
-      }
-      return parsed.toString();
-    } catch {
-      return null;
     }
   }
 
