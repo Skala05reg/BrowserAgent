@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
+import { createWriteStream, WriteStream } from "node:fs";
 import chalk from "chalk";
 import { LoggingConfig } from "../config/types.js";
 
@@ -28,13 +29,44 @@ export class ConsoleLogger {
   private readonly jsonlPath: string;
   private readonly debugTextPath: string;
   private readonly visibleLevels: Set<LogLevel>;
+  private readonly jsonlStream: WriteStream;
+  private readonly debugTextStream: WriteStream;
+  private readonly redactionKeys: string[];
+  private closed = false;
 
   public constructor(private readonly config: LoggingConfig) {
     this.jsonlPath = path.resolve(process.cwd(), config.jsonlPath);
     this.debugTextPath = path.resolve(process.cwd(), config.debugTextPath);
     this.visibleLevels = new Set(config.console.visibleLevels as LogLevel[]);
+    this.redactionKeys = config.redaction.keys.map((item) => item.toLowerCase());
     fs.mkdirSync(path.dirname(this.jsonlPath), { recursive: true });
     fs.mkdirSync(path.dirname(this.debugTextPath), { recursive: true });
+
+    this.jsonlStream = createWriteStream(this.jsonlPath, { flags: "a", encoding: "utf8" });
+    this.debugTextStream = createWriteStream(this.debugTextPath, { flags: "a", encoding: "utf8" });
+    this.jsonlStream.on("error", (error) => {
+      // eslint-disable-next-line no-console
+      console.error(`Logger jsonl stream error: ${error.message}`);
+    });
+    this.debugTextStream.on("error", (error) => {
+      // eslint-disable-next-line no-console
+      console.error(`Logger debug stream error: ${error.message}`);
+    });
+
+    const closeStreams = () => {
+      this.close();
+    };
+    process.once("beforeExit", closeStreams);
+    process.once("exit", closeStreams);
+  }
+
+  public close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.jsonlStream.end();
+    this.debugTextStream.end();
   }
 
   public system(message: string, monitorData?: Record<string, unknown>, debugData?: Record<string, unknown>): void {
@@ -79,6 +111,10 @@ export class ConsoleLogger {
     monitorData?: Record<string, unknown>,
     debugData?: Record<string, unknown>
   ): void {
+    const redactedMonitorData = monitorData ? this.redactValue(monitorData) : undefined;
+    const rawDebugPayload = debugData ?? monitorData;
+    const redactedDebugPayload = rawDebugPayload ? this.redactValue(rawDebugPayload) : undefined;
+
     const ts = this.config.timeFormat === "locale" ? new Date().toLocaleTimeString() : new Date().toISOString();
     const label = `[${level.toUpperCase()}]`;
     const line = `${ts} ${label} ${message}`;
@@ -90,25 +126,38 @@ export class ConsoleLogger {
       console.log(colored);
     }
 
-    if (shouldPrintToConsole && monitorData && Object.keys(monitorData).length > 0) {
-      const lines = this.formatMonitorDataLines(monitorData);
+    if (shouldPrintToConsole && redactedMonitorData && Object.keys(redactedMonitorData).length > 0) {
+      const lines = this.formatMonitorDataLines(redactedMonitorData);
       for (const item of lines) {
         // eslint-disable-next-line no-console
         console.log(this.applyColor(level, `  ${item}`));
       }
     }
 
-    const debugPayload = debugData ?? monitorData;
     const record: LogRecord = {
       ts: new Date().toISOString(),
       level,
       message,
-      data: debugPayload,
-      monitorData,
-      debugData: debugPayload
+      data: redactedDebugPayload,
+      monitorData: redactedMonitorData,
+      debugData: redactedDebugPayload
     };
 
-    fs.appendFileSync(this.jsonlPath, `${this.safeStringify(record, false)}\n`, "utf8");
+    const jsonlRecord: LogRecord = {
+      ts: record.ts,
+      level: record.level,
+      message: record.message,
+      data: record.data
+    };
+
+    if (this.config.jsonlIncludeMonitorData && redactedMonitorData) {
+      jsonlRecord.monitorData = redactedMonitorData;
+    }
+    if (this.config.jsonlIncludeDebugData && redactedDebugPayload) {
+      jsonlRecord.debugData = redactedDebugPayload;
+    }
+
+    this.jsonlStream.write(`${this.safeStringify(jsonlRecord, false)}\n`);
     this.appendDebugText(record);
   }
 
@@ -129,7 +178,7 @@ export class ConsoleLogger {
     }
 
     lines.push("");
-    fs.appendFileSync(this.debugTextPath, `${lines.join("\n")}\n`, "utf8");
+    this.debugTextStream.write(`${lines.join("\n")}\n`);
   }
 
   private formatMonitorDataLines(data: Record<string, unknown>): string[] {
@@ -259,5 +308,48 @@ export class ConsoleLogger {
       redBright: chalk.redBright
     };
     return (palette[colorName] ?? ((value: string) => value))(line);
+  }
+
+  private redactValue<T>(value: T, currentKey = ""): T {
+    if (!this.config.redaction.enabled) {
+      return value;
+    }
+
+    if (this.shouldRedactKey(currentKey)) {
+      return this.config.redaction.mask as T;
+    }
+
+    if (typeof value === "string") {
+      return this.redactStringSecrets(value) as T;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactValue(item)) as T;
+    }
+
+    if (value && typeof value === "object") {
+      const result: Record<string, unknown> = {};
+      for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+        result[key] = this.redactValue(nested, key);
+      }
+      return result as T;
+    }
+
+    return value;
+  }
+
+  private shouldRedactKey(key: string): boolean {
+    if (!key) {
+      return false;
+    }
+    const normalized = key.toLowerCase();
+    return this.redactionKeys.some((pattern) => normalized === pattern || normalized.includes(pattern));
+  }
+
+  private redactStringSecrets(value: string): string {
+    const mask = this.config.redaction.mask;
+    return value
+      .replace(/\b(Bearer)\s+([A-Za-z0-9._-]+)/gi, `$1 ${mask}`)
+      .replace(/([?&](?:token|access_token|api_key|apikey|auth|password|session)=)[^&\s]+/gi, `$1${mask}`);
   }
 }

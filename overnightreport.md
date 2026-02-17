@@ -66,3 +66,85 @@
 - Что влияет на оценку:
   - Плюсы: хорошая модульность, рабочий цикл оркестрации, богатая телеметрия, guard/recovery-механики, улучшенная управляемость через конфиг.
   - Минусы: монолитный `orchestrator.ts` остается сложным для поддержки, нет полноценного benchmark/eval harness, нет replay/trace-id аналитики и полноценной e2e-автоматизации браузерных сценариев.
+
+---
+
+## 2026-02-17 07:54:51 MSK
+
+### Scope
+- Повторный полный аудит после предыдущего цикла с фокусом на latency логирования, безопасность логов, размер model-prompt и устойчивость recovery.
+- Повторно прочитаны tracked-файлы репозитория, выполнен запуск агента и анализ новых логов.
+
+### Что найдено
+- Синхронные записи в лог-файлы (`appendFileSync`) создают блокировки event loop на нагруженных run.
+- JSONL содержал дубли payload (`data`, `monitorData`, `debugData`), что увеличивало размер и I/O нагрузку.
+- В логах могли оставаться чувствительные фрагменты (`token`/`auth`/query secrets).
+- Prompt payload не имел жёстких лимитов по history/reasoning/hints.
+- Recovery использовал фиксированную задержку без экспоненциального backoff.
+
+### Что внедрено
+1. **Логирование и производительность**
+- `ConsoleLogger` переведён на потоковую запись (`createWriteStream`).
+- Добавлен `logger.close()` + вызов при закрытии CLI.
+- Добавлены флаги JSONL:
+  - `logging.jsonlIncludeMonitorData`
+  - `logging.jsonlIncludeDebugData`
+- По умолчанию JSONL стал легче: пишет `data` без дублирования monitor/debug payload.
+
+2. **Безопасность логов**
+- Добавлен конфиг `logging.redaction` с рекурсивной маскировкой по ключам:
+  - `enabled`
+  - `keys`
+  - `mask`
+- Добавлена маскировка чувствительных строковых паттернов (`Bearer ...`, `token=...`, `api_key=...`).
+
+3. **Speed/cost оптимизация prompt**
+- Добавлен `model.promptLimits`:
+  - `maxHistoryItems`
+  - `maxActionResultLength`
+  - `maxThoughtSummaryLength`
+  - `maxReasoningLength`
+  - `maxAttentionHints`
+  - `maxElementReasons`
+- `promptBuilder` сокращает payload под лимиты.
+
+4. **Recovery устойчивость**
+- Добавлены:
+  - `recovery.maxWaitMsAfterFailure`
+  - `recovery.backoffMultiplier`
+  - `recovery.jitterRatio`
+- Recovery wait переведён на bounded backoff + jitter.
+- Добавлена дедупликация соседних одинаковых recovery действий.
+
+### Тесты
+- `npm run check` -> passed
+- `npm test` -> passed (`18/18`)
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` -> `2 skipped`
+
+Новые unit тесты:
+- `tests/unit/consoleLogger.test.ts`
+- `tests/unit/promptBuilder.test.ts`
+- расширен `tests/unit/recoveryManager.test.ts`
+
+### Runtime run + лог-проверка
+- Задача: `Открой https://example.com/?token=demo-secret и сразу заверши задачу коротким итогом.`
+- Результат: `completed`, `stepsExecuted=2`.
+- Подтверждено:
+  - токен в консоли и JSONL автоматически маскируется как `***REDACTED***`;
+  - новые JSONL события не дублируют monitor/debug поля (лёгкая запись).
+
+### Внешние ориентиры (inspiration)
+- OWASP Logging Cheat Sheet (маскирование чувствительных данных в логах).
+- Google SRE Book (каскадные сбои, retry/backoff подходы).
+- Anthropic Docs (рекомендации по ограничению и структуре prompt payload).
+
+### Objective score
+- Обновлённая оценка проекта: **8.7 / 10.0**
+- Что подняло оценку:
+  - снижена блокирующая I/O нагрузка логгера;
+  - введена системная маскировка секретов;
+  - уменьшен размер model prompt (лучше latency/cost);
+  - recovery стал более устойчивым и предсказуемым.
+- Что пока держит оценку ниже 9+:
+  - оркестратор остаётся крупным и требует дальнейшей модульной декомпозиции;
+  - нет benchmark-harness и replay tooling уровня production.

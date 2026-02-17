@@ -1,5 +1,70 @@
 # CONTEXT
 
+## 2026-02-17 — Logging redaction + lightweight JSONL + prompt limits + recovery backoff
+
+### Что было найдено
+- `ConsoleLogger` писал в файлы синхронно (`appendFileSync`) на каждом событии, что увеличивало latency и блокировало event loop при длинных snapshot/debug payload.
+- JSONL-документ дублировал payload (`data` + `monitorData` + `debugData`), из-за чего файлы быстро разрастались.
+- В логах присутствовали значения query-параметров вида `token=...`, что рискованно для безопасности.
+- Prompt для модели тащил полный history/hints/reasons без явных hard-limits на payload.
+- Recovery использовал фиксированную паузу без backoff/jitter и мог генерировать дублирующиеся recovery-операции.
+
+### Что реализовано
+1. Logging runtime оптимизирован:
+- `ConsoleLogger` переведен на потоковую запись (`createWriteStream`) вместо `appendFileSync`;
+- добавлен `logger.close()` и вызов при закрытии CLI.
+
+2. JSONL размер и структура:
+- добавлены флаги:
+  - `logging.jsonlIncludeMonitorData`
+  - `logging.jsonlIncludeDebugData`
+- по умолчанию в JSONL хранится `data` без дублирующих полей monitor/debug.
+
+3. Security redaction для логов:
+- новый блок `logging.redaction`:
+  - `enabled`
+  - `keys`
+  - `mask`
+- redaction применяется рекурсивно к monitor/debug payload и к строкам (включая `Bearer ...`, `token=...`, `api_key=...`).
+
+4. Prompt payload limits:
+- добавлен `model.promptLimits.*`:
+  - `maxHistoryItems`
+  - `maxActionResultLength`
+  - `maxThoughtSummaryLength`
+  - `maxReasoningLength`
+  - `maxAttentionHints`
+  - `maxElementReasons`
+- `promptBuilder` теперь ограничивает объем history/hints/reasons и сокращает длинные поля.
+
+5. Recovery backoff:
+- добавлены:
+  - `recovery.maxWaitMsAfterFailure`
+  - `recovery.backoffMultiplier`
+  - `recovery.jitterRatio`
+- wait в recovery теперь считается по bounded backoff;
+- добавлена дедупликация соседних одинаковых recovery-действий.
+
+### Валидация
+- `npm run check` — passed.
+- `npm test` — passed (`18/18`).
+- `pytest -q tests/test_brain_sota.py tests/test_integration_sota.py` — `2 skipped`.
+
+### Проверка на реальном run
+Run: `2026-02-17T04:52:50.504Z` -> `2026-02-17T04:52:58.910Z`, задача:
+`Открой https://example.com/?token=demo-secret и сразу заверши задачу коротким итогом.`
+
+Результат:
+- `completed`, `stepsExecuted=2`.
+- В консоли и JSONL `token` автоматически замаскирован (`***REDACTED***`).
+- Новые записи JSONL идут без `monitorData/debugData` (облегченный формат).
+
+### Новые/измененные тесты
+- `tests/unit/consoleLogger.test.ts` — redaction + compact JSONL shape.
+- `tests/unit/promptBuilder.test.ts` — prompt limits.
+- `tests/unit/recoveryManager.test.ts` — bounded backoff + dedupe.
+- `tests/unit/orchestrator.smoke.test.ts` — runtime config обновлен под новые поля.
+
 ## 2026-02-17 — Runtime hardening + config-driven action limits + prompt dedup
 
 ### Что было найдено

@@ -92,10 +92,16 @@ npm test
 - `logs/agent-debug.txt`: подробный текстовый debug-трейс с расширенными payload;
 - `logs/agent-events.jsonl`: структурированные события для программного анализа.
 - запись в файлы идет в реальном времени (append на каждое событие), а не в конце задачи.
+- JSONL может быть облегчен по размеру (без дублирующих monitor/debug полей) через конфиг.
 
 Пути и лимиты компактного вывода настраиваются в `logging`:
 - `jsonlPath`
 - `debugTextPath`
+- `jsonlIncludeMonitorData`
+- `jsonlIncludeDebugData`
+- `redaction.enabled`
+- `redaction.keys`
+- `redaction.mask`
 - `console.visibleLevels`
 - `console.maxInlineValueLength`
 - `console.maxInlineArrayItems`
@@ -135,11 +141,25 @@ Model fallback поведение:
 - `model.fallbackMode`: `always` / `non_transient_only` / `never`
 - `model.transientErrorKeywords`
 
+Model prompt-limits (token/cost/latency control):
+- `model.promptLimits.maxHistoryItems`
+- `model.promptLimits.maxActionResultLength`
+- `model.promptLimits.maxThoughtSummaryLength`
+- `model.promptLimits.maxReasoningLength`
+- `model.promptLimits.maxAttentionHints`
+- `model.promptLimits.maxElementReasons`
+
 Context anti-loop:
 - `context.nonTextInputTypes`
 - `context.loopHints.*`
 - `context.scoreWeights.nonTextInputPenalty`
 - `context.scoreWeights.lowSignalElementPenalty`
+
+Recovery backoff:
+- `recovery.waitMsAfterFailure`
+- `recovery.maxWaitMsAfterFailure`
+- `recovery.backoffMultiplier`
+- `recovery.jitterRatio`
 
 Переменные окружения:
 

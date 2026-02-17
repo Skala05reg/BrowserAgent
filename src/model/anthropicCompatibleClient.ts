@@ -34,7 +34,7 @@ export class AnthropicCompatibleModelClient implements ModelClient {
           content: [
             {
               type: "text",
-              text: buildDecisionUserPrompt(input)
+              text: buildDecisionUserPrompt(input, this.runtimeConfig.model.promptLimits)
             }
           ]
         }

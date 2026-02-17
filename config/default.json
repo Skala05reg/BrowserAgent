@@ -89,7 +89,15 @@
     ],
     "connectionCheckSystemPrompt": "You are a healthcheck assistant. Reply with short plain text only.",
     "connectionCheckUserPrompt": "Return exactly: GLM_CONNECTION_OK",
-    "connectionCheckMaxTokens": 40
+    "connectionCheckMaxTokens": 40,
+    "promptLimits": {
+      "maxHistoryItems": 8,
+      "maxActionResultLength": 260,
+      "maxThoughtSummaryLength": 180,
+      "maxReasoningLength": 240,
+      "maxAttentionHints": 6,
+      "maxElementReasons": 4
+    }
   },
   "safety": {
     "requireConfirmationRiskLevels": [
@@ -116,8 +124,26 @@
   "logging": {
     "jsonlPath": "logs/agent-events.jsonl",
     "debugTextPath": "logs/agent-debug.txt",
+    "jsonlIncludeMonitorData": false,
+    "jsonlIncludeDebugData": false,
     "showObservationDetails": true,
     "timeFormat": "iso",
+    "redaction": {
+      "enabled": true,
+      "keys": [
+        "authorization",
+        "api_key",
+        "apiKey",
+        "x-api-key",
+        "token",
+        "auth",
+        "password",
+        "cookie",
+        "set-cookie",
+        "session"
+      ],
+      "mask": "***REDACTED***"
+    },
     "console": {
       "visibleLevels": [
         "status",
@@ -258,6 +284,9 @@
     ],
     "popupDismissKey": "Escape",
     "waitMsAfterFailure": 1200,
+    "maxWaitMsAfterFailure": 10000,
+    "backoffMultiplier": 1.6,
+    "jitterRatio": 0.05,
     "scrollRecoveryAmount": 420,
     "maxAutoRecoveryActions": 3,
     "maxConsecutiveFailuresBeforePause": 4

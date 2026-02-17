@@ -80,6 +80,16 @@ export interface ModelConfig {
   connectionCheckSystemPrompt: string;
   connectionCheckUserPrompt: string;
   connectionCheckMaxTokens: number;
+  promptLimits: ModelPromptLimitsConfig;
+}
+
+export interface ModelPromptLimitsConfig {
+  maxHistoryItems: number;
+  maxActionResultLength: number;
+  maxThoughtSummaryLength: number;
+  maxReasoningLength: number;
+  maxAttentionHints: number;
+  maxElementReasons: number;
 }
 
 export interface SafetyConfig {
@@ -122,10 +132,19 @@ export interface DecisionDigestConfig {
 export interface LoggingConfig {
   jsonlPath: string;
   debugTextPath: string;
+  jsonlIncludeMonitorData: boolean;
+  jsonlIncludeDebugData: boolean;
   showObservationDetails: boolean;
   timeFormat: "iso" | "locale";
+  redaction: LoggingRedactionConfig;
   console: LoggingConsoleConfig;
   colors: LoggingColorConfig;
+}
+
+export interface LoggingRedactionConfig {
+  enabled: boolean;
+  keys: string[];
+  mask: string;
 }
 
 export interface CliConfig {
@@ -193,6 +212,9 @@ export interface RecoveryConfig {
   transientErrorKeywords: string[];
   popupDismissKey: string;
   waitMsAfterFailure: number;
+  maxWaitMsAfterFailure: number;
+  backoffMultiplier: number;
+  jitterRatio: number;
   scrollRecoveryAmount: number;
   maxAutoRecoveryActions: number;
   maxConsecutiveFailuresBeforePause: number;

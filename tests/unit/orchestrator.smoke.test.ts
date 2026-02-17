@@ -72,7 +72,15 @@ function createRuntimeConfig(): RuntimeConfig {
       transientErrorKeywords: ["timeout", "rate limit"],
       connectionCheckSystemPrompt: "system",
       connectionCheckUserPrompt: "user",
-      connectionCheckMaxTokens: 20
+      connectionCheckMaxTokens: 20,
+      promptLimits: {
+        maxHistoryItems: 6,
+        maxActionResultLength: 200,
+        maxThoughtSummaryLength: 120,
+        maxReasoningLength: 160,
+        maxAttentionHints: 4,
+        maxElementReasons: 3
+      }
     },
     safety: {
       requireConfirmationRiskLevels: ["destructive", "financial", "external_send"],
@@ -81,8 +89,15 @@ function createRuntimeConfig(): RuntimeConfig {
     logging: {
       jsonlPath: "logs/test-events.jsonl",
       debugTextPath: "logs/test-debug.txt",
+      jsonlIncludeMonitorData: false,
+      jsonlIncludeDebugData: false,
       showObservationDetails: false,
       timeFormat: "iso",
+      redaction: {
+        enabled: true,
+        keys: ["token", "password", "authorization", "cookie"],
+        mask: "***REDACTED***"
+      },
       console: {
         visibleLevels: ["status", "action", "approval", "success", "warn", "error"],
         maxInlineValueLength: 120,
@@ -167,6 +182,9 @@ function createRuntimeConfig(): RuntimeConfig {
       transientErrorKeywords: ["timeout"],
       popupDismissKey: "Escape",
       waitMsAfterFailure: 0,
+      maxWaitMsAfterFailure: 2000,
+      backoffMultiplier: 1.5,
+      jitterRatio: 0,
       scrollRecoveryAmount: 120,
       maxAutoRecoveryActions: 2,
       maxConsecutiveFailuresBeforePause: 3

@@ -71,7 +71,15 @@ const runtimeSchema = z.object({
     transientErrorKeywords: z.array(z.string().min(1)),
     connectionCheckSystemPrompt: z.string().min(1),
     connectionCheckUserPrompt: z.string().min(1),
-    connectionCheckMaxTokens: z.number().int().positive()
+    connectionCheckMaxTokens: z.number().int().positive(),
+    promptLimits: z.object({
+      maxHistoryItems: z.number().int().positive(),
+      maxActionResultLength: z.number().int().positive(),
+      maxThoughtSummaryLength: z.number().int().positive(),
+      maxReasoningLength: z.number().int().positive(),
+      maxAttentionHints: z.number().int().positive(),
+      maxElementReasons: z.number().int().positive()
+    })
   }),
   safety: z.object({
     requireConfirmationRiskLevels: z.array(z.enum(["safe", "sensitive", "destructive", "financial", "external_send"])),
@@ -80,8 +88,15 @@ const runtimeSchema = z.object({
   logging: z.object({
     jsonlPath: z.string().min(1),
     debugTextPath: z.string().min(1),
+    jsonlIncludeMonitorData: z.boolean(),
+    jsonlIncludeDebugData: z.boolean(),
     showObservationDetails: z.boolean(),
     timeFormat: z.enum(["iso", "locale"]),
+    redaction: z.object({
+      enabled: z.boolean(),
+      keys: z.array(z.string().min(1)),
+      mask: z.string().min(1)
+    }),
     console: z.object({
       visibleLevels: z.array(z.enum(["system", "status", "observation", "decision", "action", "approval", "success", "warn", "error"])),
       maxInlineValueLength: z.number().int().positive(),
@@ -166,6 +181,9 @@ const runtimeSchema = z.object({
     transientErrorKeywords: z.array(z.string().min(1)),
     popupDismissKey: z.string().min(1),
     waitMsAfterFailure: z.number().int().nonnegative(),
+    maxWaitMsAfterFailure: z.number().int().positive(),
+    backoffMultiplier: z.number().min(1),
+    jitterRatio: z.number().min(0).max(1),
     scrollRecoveryAmount: z.number().int().nonnegative(),
     maxAutoRecoveryActions: z.number().int().positive(),
     maxConsecutiveFailuresBeforePause: z.number().int().positive()

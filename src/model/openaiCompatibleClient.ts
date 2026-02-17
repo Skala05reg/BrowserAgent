@@ -38,7 +38,7 @@ export class OpenAICompatibleModelClient implements ModelClient {
         },
         {
           role: "user",
-          content: buildDecisionUserPrompt(input)
+          content: buildDecisionUserPrompt(input, this.runtimeConfig.model.promptLimits)
         }
       ]
     };

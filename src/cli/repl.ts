@@ -39,6 +39,7 @@ export class AgentCli {
       this.logger.status("Завершаю работу...");
       this.orchestrator.stop();
       await this.browserRuntime.stop();
+      this.logger.close();
       process.exit(0);
     });
 
